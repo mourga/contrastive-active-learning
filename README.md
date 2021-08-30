@@ -1,4 +1,4 @@
-# Contrastive Active Learning (CAL)
+# Contrastive Active Learning (CAL) ⚠️WORK IN PROGRESS⚠️
 > [**Active Learning by Acquiring Contrastive Examples**](TBA)  
 > Katerina Margatina, Giorgos Vernikos, Loic Barrault, Nikolaos Aletras  
 > Empirical Methods in Natural Language Processing (EMNLP) 2021.
