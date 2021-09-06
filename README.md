@@ -25,7 +25,7 @@ So far we have used only `BERT-BASE`, but the code can support any other model (
 
 ---
 ## Installation
-This project is implemented with Python 3 and PyTorch 1.2.0.
+This project is implemented with `Python 3`, `PyTorch 1.4.0` and `transformers 3.1.0`.
 
 **Create Environment (Optional):**  Ideally, you should create a conda environment for the project.
 
@@ -37,7 +37,7 @@ conda activate cal
 Also install the required torch package:
 
 ```
-conda install pytorch=1.2.0 torchvision cudatoolkit=10.0 -c pytorch
+conda install pytorch==1.4.0 torchvision==0.5.0 cudatoolkit=10.1 -c pytorch
 ```
 Finally install the rest of the requirements:
 
@@ -52,14 +52,24 @@ In order to download the datasets we used run the following script:
 ```
 bash get_data.sh
 ```
-DBPedia is too large so dowload it manually from [here](https://drive.google.com/uc?id=0Bz8a_Dbh9QhbQ2Vic1kxMmZZQ1k&export=download).
+`DBPedia` is too large so dowload it manually from [here](https://drive.google.com/uc?id=0Bz8a_Dbh9QhbQ2Vic1kxMmZZQ1k&export=download).
 
 ---
 ## Organization
-
+The repository is organizes as follows:
+- `acquisition`:
+- `analysis`:
+- `cache`:
+- `checkpoints`:
+- `data`:
+- `utilities`:
+- 
 ---
 ## Usage
 
+```
+python run_al.py --dataset_name sst-2 --acquisition contrastive
+```
 ---
 
 ## Acknowledgements
