@@ -1,4 +1,5 @@
-# code from https://github.com/drimpossible/Sampling-Bias-Active-Learning
+# code from
+# (1) https://github.com/drimpossible/Sampling-Bias-Active-Learning
 
 import gc
 import os
@@ -7,16 +8,54 @@ import sys
 import torch
 
 import numpy as np
-from sklearn.metrics import calinski_harabaz_score, f1_score, confusion_matrix
+from sklearn.metrics import calinski_harabaz_score, f1_score, confusion_matrix, matthews_corrcoef
 # from numba import prange
-
+from transformers.data.metrics import simple_accuracy, acc_and_f1, pearson_and_spearman
 from sklearn.preprocessing import LabelBinarizer
+
+from acquisition.BatchBALD.src.torch_utils import logit_mean
 
 sys.path.append("../../")
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
-from modules.acquisition.BatchBALD.src.torch_utils import logit_mean
+# from modules.acquisition.BatchBALD.src.torch_utils import logit_mean
 
+def acc_and_f1_macro(preds, labels):
+    acc = simple_accuracy(preds, labels)
+    f1 = f1_score(y_true=labels, y_pred=preds, average="macro")
+    return {
+        "acc": acc,
+        "f1": f1,
+        "acc_and_f1": (acc + f1) / 2,
+    }
+def compute_metrics(task_name, preds, labels):
+    assert len(preds) == len(labels)
+    if task_name == "cola":
+        return {"mcc": matthews_corrcoef(labels, preds)}
+    elif task_name == "sst-2":
+        return {"acc": simple_accuracy(preds, labels)}
+    elif task_name == "mrpc":
+        return acc_and_f1(preds, labels)
+    elif task_name == "sts-b":
+        return pearson_and_spearman(preds, labels)
+    elif task_name == "qqp":
+        return acc_and_f1(preds, labels)
+    elif task_name == "mnli":
+        return {"acc": simple_accuracy(preds, labels)}
+    elif task_name == "mnli-mm":
+        return {"acc": simple_accuracy(preds, labels)}
+    elif task_name == "qnli":
+        return {"acc": simple_accuracy(preds, labels)}
+    elif task_name == "rte":
+        return {"acc": simple_accuracy(preds, labels)}
+    elif task_name == "wnli":
+        return {"acc": simple_accuracy(preds, labels)}
+    elif task_name == "hans":
+        return {"acc": simple_accuracy(preds, labels)}
+    elif task_name in ["ag_news", "dbpedia", "trec-6", "imdb", "pubmed", 'nli', 'sentiment']:
+        return acc_and_f1_macro(preds, labels)
+    else:
+        raise KeyError(task_name)
 
 def softmax(x):
     assert(len(x.shape)==2)

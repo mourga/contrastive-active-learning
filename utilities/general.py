@@ -1,3 +1,4 @@
+import collections
 import os
 import sys
 
@@ -7,8 +8,23 @@ from torch.nn import functional as F
 sys.path.append("../../")
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
-from sys_config import EXP_DIR, FIG_DIR
+from sys_config import EXP_DIR
 
+def print_stats(labels_list, name):
+    """
+
+    :param stats_list: format: [(class_i, %), (class_i+1, %), ...]
+    :return:
+    """
+    c = collections.Counter(labels_list)
+    stats_list = [(i, c[i] / len(labels_list) * 100.0) for i in c]
+
+    str = "{} set stats: ".format(name)
+    for i in range(0, len(stats_list)):
+        str += "class {}: {}% ".format(stats_list[i][0], round(stats_list[i][1]),3)
+
+    print(str)
+    return
 
 def number_h(num):
     for unit in ['', 'K', 'M', 'G', 'T', 'P', 'E', 'Z']:
@@ -67,73 +83,23 @@ def create_dir(dir_path):
 def create_exp_dirs(args):
     model_type = args.model_type if args.model_type != 'allenai/scibert' else 'bert'
 
-    exp_name = 'al_{}_{}_{}_{}_{}'.format(args.dataset_name,
-                                          # args.model_type,
+    exp_name = 'al_{}_{}_{}'.format(args.dataset_name,
                                           model_type,
-                                          args.variant,
-                                          args.acquisition,
-                                          args.seed)
+                                          args.acquisition)
 
-    if args.adaptation: exp_name += '_adapt'
-    if args.adaptation_best: exp_name += '_adapt_best'
-    if args.oversampling: exp_name += '_oversampling'
-    if args.adapt_new: exp_name += '_new'
-    if args.adapters: exp_name += '_adapters'
-    # if args.diverse:
-    #     exp_name += '_diversity'
-    #     if args.div_type == 'cosine':
-    #         exp_name += '-cosine-{}'.format(args.encoder)
-    #     elif args.div_type == 'cca':
-    #         exp_name += '_cca'
-    #     elif args.div_type == 'tfidf':
-    #         exp_name += '_tfidf'
-    #     exp_name += '_{}'.format(args.a_div)
-    #     if args.div_operator == 'plus': exp_name += '_sim'
     if args.indicator is not None: exp_name += '_{}'.format(args.indicator)
-    if args.patience is not None: exp_name += '_early{}'.format(int(args.num_train_epochs))
-    if args.tapt is not None: exp_name += '_tapt_{}'.format(args.tapt)
 
-    # /experiments/al_iterations
-    al_iterations_dir = os.path.join(EXP_DIR, 'al_iterations')
-    # create_dir(al_iterations_dir)
-    # /experiments/al_iterations/{dataset}_{model}_{acquisition}
-    al_config_dir = os.path.join(al_iterations_dir, '{}_{}_{}'.format(args.dataset_name,
-                                                                      # args.model_type,
-                                                                      model_type,
-                                                                      args.acquisition))
+    al_iterations_dir = EXP_DIR
+    create_dir(al_iterations_dir)
+    # /experiments/{dataset}_{model}_{acquisition}
+    al_config_dir = os.path.join(al_iterations_dir, exp_name)
     create_dir(al_config_dir)
     # /experiments/al_iterations/{dataset}_{model}_{acquisition}/{variant}_{seed}
-    var_seed = '{}_{}'.format(args.variant, args.seed)
-    if args.adaptation: var_seed += '_adapt'
-    if args.adaptation_best: var_seed += '_adapt_best'
-    if args.oversampling: var_seed += '_oversampling'
-    if args.adapt_new: var_seed += '_new'
-    if args.adapters: var_seed += '_adapters'
-    # if args.diverse:
-    #     # var_seed += '_diversity_{}'.format(args.encoder)
-    #     var_seed += '_diversity'
-    #     if args.div_type == 'cosine':
-    #         var_seed += '-cosine-{}'.format(args.encoder)
-    #     elif args.div_type == 'cca':
-    #         var_seed += '_cca'
-    #     elif args.div_type == 'tfidf':
-    #         var_seed += '_tfidf'
-    #     var_seed += '_{}'.format(args.a_div)
-    #     if args.div_operator == 'plus': var_seed += '_sim'
+    var_seed = '{}'.format(args.seed)
     if args.indicator is not None: var_seed += '_{}'.format(args.indicator)
-    if args.patience is not None: var_seed += '_early{}'.format(int(args.num_train_epochs))
-    if args.tapt: var_seed += '_tapt_{}'.format(args.tapt)
     if args.mc_samples is None and args.acquisition in ['entropy', 'least_conf']:
         var_seed += '_vanilla'
-    if args.uda: var_seed += '_uda_{}'.format(args.uda_per)
-    if args.augm_val: var_seed += '_augm_val'
-    if args.add_adv:
-        var_seed += '_add'
-        if args.add_all:
-            var_seed += '_all'
-        else:
-            var_seed += '_rep'
-    if args.debug: var_seed += '_debug'
+    # if args.debug: var_seed += '_debug'
     if args.reverse: var_seed += '_reverse'
     if args.mean_embs: var_seed += '_inputs'
     if args.mean_out: var_seed += '_outputs'
@@ -144,23 +110,23 @@ def create_exp_dirs(args):
     if args.bert_score: var_seed += '_bs'
     if args.bert_rep: var_seed += '_br'
     if args.tfidf: var_seed += '_tfidf'
-    if args.counterfactual is not None: var_seed += '_{}'.format(args.counterfactual)
 
     results_per_iteration_dir = os.path.join(al_config_dir, var_seed)
     create_dir(results_per_iteration_dir)
 
-    d_pool_dir = os.path.join(FIG_DIR, 'd_pools')
-    create_dir(d_pool_dir)
-    d_pool_dir = os.path.join(d_pool_dir, '{}_{}_{}'.format(args.dataset_name,
-                                                                      args.model_type,
-                                                                      args.acquisition))
-    create_dir(d_pool_dir)
-    d_pool_dir = os.path.join(d_pool_dir, var_seed)
-    create_dir(d_pool_dir)
+    # d_pool_dir = os.path.join(FIG_DIR, 'd_pools')
+    # create_dir(d_pool_dir)
+    # d_pool_dir = os.path.join(d_pool_dir, '{}_{}_{}'.format(args.dataset_name,
+    #                                                                   args.model_type,
+    #                                                                   args.acquisition))
+    # create_dir(d_pool_dir)
+    # d_pool_dir = os.path.join(d_pool_dir, var_seed)
+    # create_dir(d_pool_dir)
 
     exp_dir = os.path.join(EXP_DIR, exp_name)
     # create_dir(exp_dir)
 
-    fig_dir = os.path.join(FIG_DIR, '{}_{}_{}'.format(args.dataset_name, args.model_type, args.acquisition), var_seed)
+    # fig_dir = os.path.join(FIG_DIR, '{}_{}_{}'.format(args.dataset_name, args.model_type, args.acquisition), var_seed)
 
-    return fig_dir, results_per_iteration_dir, d_pool_dir
+    # return fig_dir, results_per_iteration_dir
+    return results_per_iteration_dir

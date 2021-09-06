@@ -7,17 +7,27 @@ import numpy as np
 import torch
 from transformers import AutoTokenizer, AutoConfig, AutoModelWithLMHead
 
+
 sys.path.append("../../")
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
-from models.deep.main_transformer import get_glue_tensor_dataset
+# from acquisition.BatchBALD.src.acquisition_functions import variation_ratios, max_entropy_acquisition_function, \
+#     mean_stddev_acquisition_function
+from acquisition.BatchBALD.src.torch_utils import mutual_information
+from utilities.data_loader import get_glue_tensor_dataset
+from utilities.preprocessors import processors
+
+
+# from models.deep.main_transformer import get_glue_tensor_dataset
 from sys_config import CKPT_DIR
 from acquisition.alps.active import acquire
 from acquisition.alps.sample import sampling_to_head
-from utilities.general_preprocessors import processors
-
-from modules.acquisition.batchbald import BB_acquisition, mutual_information, max_entropy_acquisition_function, \
+from acquisition.batchbald import BB_acquisition, mutual_information, max_entropy_acquisition_function, \
     variation_ratios, mean_stddev_acquisition_function
+# from utilities.general_preprocessors import processors
+
+# from modules.acquisition.batchbald import BB_acquisition, mutual_information, max_entropy_acquisition_function, \
+#     variation_ratios, mean_stddev_acquisition_function
 
 logger = logging.getLogger(__name__)
 

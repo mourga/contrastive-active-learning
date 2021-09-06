@@ -7,15 +7,22 @@ import sys
 
 import torch
 import numpy as np
+from blackhc.progress_bar import with_progress_bar
 
 sys.path.append("../../")
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
-from modules.acquisition.BatchBALD.src import torch_utils
-from blackhc.progress_bar import with_progress_bar
-import modules.acquisition.BatchBALD.src.joint_entropy.exact as joint_entropy_exact
-import modules.acquisition.BatchBALD.src.joint_entropy.sampling as joint_entropy_sampling
-from modules.acquisition.BatchBALD.src.acquisition_batch import AcquisitionBatch
+import acquisition.BatchBALD.src.joint_entropy.exact as joint_entropy_exact
+import acquisition.BatchBALD.src.joint_entropy.sampling as joint_entropy_sampling
+from acquisition.BatchBALD.src import torch_utils
+
+
+
+# from modules.acquisition.BatchBALD.src import torch_utils
+# from blackhc.progress_bar import with_progress_bar
+# import modules.acquisition.BatchBALD.src.joint_entropy.exact as joint_entropy_exact
+# import modules.acquisition.BatchBALD.src.joint_entropy.sampling as joint_entropy_sampling
+# from modules.acquisition.BatchBALD.src.acquisition_batch import AcquisitionBatch
 
 compute_multi_bald_bag_multi_bald_batch_size = None
 
