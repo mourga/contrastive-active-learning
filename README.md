@@ -1,6 +1,6 @@
 # Contrastive Active Learning (CAL) 
 
-## ⚠️WORK IN PROGRESS⚠️
+<!-- ## ⚠️WORK IN PROGRESS⚠️ -->
 
 > [**Active Learning by Acquiring Contrastive Examples**](https://arxiv.org/abs/2109.03764)  
 > Katerina Margatina, Giorgos Vernikos, Loic Barrault, Nikolaos Aletras  
@@ -10,7 +10,7 @@
 ---
 # Quick Overview
 
-This repository contains code for running active learning with our proposed acquisition function, CAL, and other baselines. 
+In our paper, we propose a new _acquisition function for active learning_ namely **CAL: Contrastive Active Learning**. This repository contains code for running active learning with our proposed acquisition function, CAL, and other baselines. 
 
 <p align="center">
   <img src="cal.png" width="500">
