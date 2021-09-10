@@ -428,7 +428,7 @@ def al_loop(args):
         assert len(set(X_train_remaining_inds)) == len(X_train_remaining_inds)
 
         start = time.time()
-        if args.acquisition == "cal":
+        if args.acquisition in ["cal", "contrastive"]:
             if args.tfidf:
                 tfidf_dtrain_reprs = torch.tensor(list(np.array(tfidf_representations)[X_train_current_inds]))
                 tfidf_dpool_reprs = torch.tensor(list(np.array(tfidf_representations)[X_train_remaining_inds]))
