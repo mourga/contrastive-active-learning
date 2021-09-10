@@ -29,7 +29,7 @@ So far we have used only `BERT-BASE`, but the code can support any other model (
 
 ---
 ## Installation
-This project is implemented with `Python 3`, `PyTorch 1.4.0` and `transformers 3.1.0`.
+This project is implemented with `Python 3`, `PyTorch 1.9.0` and `transformers 3.1.0`.
 
 **Create Environment (Optional):**  Ideally, you should create a conda environment for the project.
 
@@ -38,18 +38,18 @@ conda create -n cal python=3.7
 conda activate cal
 ```
 
-Also install the required torch package:
+Also install the required torch package(*):
 
 ```
-conda install pytorch==1.4.0 torchvision==0.5.0 cudatoolkit=10.1 -c pytorch
-<!--  conda install pytorch==1.9.0 torchvision torchaudio cudatoolkit=11.1 -c pytorch -c nvidia ford -->
+conda install pytorch==1.9.0 torchvision torchaudio cudatoolkit=11.1 -c pytorch -c nvidia
 ```
+<!--  conda install pytorch==1.9.0 torchvision torchaudio cudatoolkit=11.1 -c pytorch -c nvidia ford -->
 Finally install the rest of the requirements:
 
 ```
 pip install -r requirements.txt
 ```
-Please check [here](https://pytorch.org/get-started/previous-versions/) for information on how to install properly the required pytorch version for your machine.
+(*) Please check [here](https://pytorch.org/) for information on how to install properly the required pytorch version for your machine (cuda). This is important! Do not copy paste the above line without first checking which cuda version is supported by your machine. You can run `nvcc --version` in your terminal to check it.
 
 ---
 ## Download data
