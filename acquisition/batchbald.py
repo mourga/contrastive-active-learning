@@ -7,7 +7,7 @@ import sys
 
 import torch
 import numpy as np
-from blackhc.progress_bar import with_progress_bar
+# from blackhc.progress_bar import with_progress_bar
 
 sys.path.append("../../")
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
@@ -26,6 +26,16 @@ from acquisition.BatchBALD.src import torch_utils
 
 compute_multi_bald_bag_multi_bald_batch_size = None
 
+def with_progress_bar(
+    iterable, length=None, length_unit=None, unit_scale=None, tqdm_args=None
+):
+    return ProgressBarIterable(
+        iterable,
+        length=length,
+        length_unit=length_unit,
+        unit_scale=unit_scale,
+        tqdm_args=tqdm_args,
+    )
 
 def batch_exact_joint_entropy_logits(logits_B_K_C, prev_joint_probs_M_K, chunk_size, device, out_joint_entropies_B):
     """This one switches between devices, too."""

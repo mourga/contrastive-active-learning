@@ -2,13 +2,13 @@
 Code from https://huggingface.co/transformers/v3.1.0/examples.html
 """
 
+import logging
 import os
 import sys
-import logging
+
 import numpy as np
 import torch
 from torch.utils.data import TensorDataset
-
 from transformers import AutoTokenizer
 
 sys.path.append("../../")
@@ -19,7 +19,9 @@ from utilities.preprocessors import processors, output_modes, convert_examples_t
 
 logger = logging.getLogger(__name__)
 
-def get_glue_dataset(args, data_dir, task, model_type, evaluate=False, test=False, contrast=False, ood=False, ood_name=None):
+
+def get_glue_dataset(args, data_dir, task, model_type, evaluate=False, test=False, contrast=False, ood=False,
+                     ood_name=None):
     """
     Loads a dataset (raw text).
     :param data_dir: path ../data/[task]
@@ -38,7 +40,9 @@ def get_glue_dataset(args, data_dir, task, model_type, evaluate=False, test=Fals
     # Dataset
     # Load data features from cache or dataset file
     if test:
-        filename = "cached_{}_{}_original".format("test_contrast", str(task)) if contrast else "cached_{}_{}_original".format("test", str(task))
+        filename = "cached_{}_{}_original".format("test_contrast",
+                                                  str(task)) if contrast else "cached_{}_{}_original".format("test",
+                                                                                                             str(task))
         if ood: filename += '_ood'
         cached_dataset = os.path.join(
             data_dir,
@@ -53,7 +57,6 @@ def get_glue_dataset(args, data_dir, task, model_type, evaluate=False, test=Fals
             data_dir,
             filename,
         )
-    # if args.counterfactual is not None: cached_dataset += '_{}'.format(args.counterfactual)
     if ood_name is not None: cached_dataset += '_{}'.format(ood_name)
 
     if os.path.exists(cached_dataset):
@@ -65,17 +68,6 @@ def get_glue_dataset(args, data_dir, task, model_type, evaluate=False, test=Fals
         if task in ["mnli", "mnli-mm"] and model_type in ["roberta", "xlmroberta"]:
             # HACK(label indices are swapped in RoBERTa pretrained model)
             label_list[1], label_list[2] = label_list[2], label_list[1]
-        # if args.counterfactual is not None:
-        #     if test:
-        #         examples = (
-        #             processor.get_test_examples_ood(data_dir, ood_name) if ood else processor.get_test_examples(data_dir, args.counterfactual)
-        #         )
-        #     else:
-        #         examples = (
-        #             processor.get_dev_examples(data_dir, args.counterfactual) if evaluate
-        #             else processor.get_train_examples(data_dir, args.counterfactual)
-        #         )
-        # else:
         if test:
             if ood:
                 examples = (
@@ -182,13 +174,13 @@ def get_glue_tensor_dataset(X_inds, args, task, tokenizer, train=False,
     if test:
         prefix = "test"
     elif evaluate:
-        prefix="dev"
+        prefix = "dev"
     elif train:
-        prefix="train"
+        prefix = "train"
     elif augm:
-        prefix="augm"
+        prefix = "augm"
     else:
-        prefix="???"
+        prefix = "???"
     if contrast: prefix += "_contrast"
     if contrast_ori: prefix += "_contrast_ori"
     if ood: prefix += "_ood"
@@ -206,7 +198,7 @@ def get_glue_tensor_dataset(X_inds, args, task, tokenizer, train=False,
         ),
     )
 
-    if os.path.exists(cached_features_file) and data_dir == args.data_dir: #and not args.overwrite_cache:
+    if os.path.exists(cached_features_file) and data_dir == args.data_dir:  # and not args.overwrite_cache:
         logger.info("Loading features from cached file %s", cached_features_file)
         features = torch.load(cached_features_file)
         if X_inds is not None:
@@ -221,88 +213,17 @@ def get_glue_tensor_dataset(X_inds, args, task, tokenizer, train=False,
 
         if test:
             if ood:
-                examples = (processor.get_test_examples_ood(data_dir)) if ood_name is None else (processor.get_test_examples_ood(data_dir, ood_name))
-            elif args.counterfactual is not None:
-                examples = (processor.get_test_examples(data_dir, counter_name))
+                examples = (processor.get_test_examples_ood(data_dir)) if ood_name is None else (
+                    processor.get_test_examples_ood(data_dir, ood_name))
             else:
-                examples = (processor.get_contrast_examples("test", contrast_ori) if (contrast or contrast_ori) else processor.get_test_examples(data_dir))
+                examples = (processor.get_contrast_examples("test", contrast_ori) if (
+                            contrast or contrast_ori) else processor.get_test_examples(data_dir))
         elif evaluate:
-            if args.counterfactual is not None:
-                examples = (processor.get_dev_examples(data_dir, args.counterfactual))
-            else:
-                examples = (processor.get_contrast_examples("dev") if contrast else processor.get_dev_examples(args.data_dir))
+            examples = (
+                processor.get_contrast_examples("dev") if contrast else processor.get_dev_examples(args.data_dir))
         elif train:
-            # if args.counterfactual is not None:
-            #     examples = (processor.get_train_examples(data_dir, args.counterfactual))
-            # else:
             examples = (processor.get_train_examples(args.data_dir))
-        # elif augm:
-        #     if dpool:
-        #         augm_examples = (processor.get_augm_examples(X_augm, y_augm))
-        #
-        #         features = convert_examples_to_features(
-        #             augm_examples,
-        #             tokenizer,
-        #             label_list=label_list,
-        #             max_length=args.max_seq_length,
-        #             output_mode=output_mode,
-        #             pad_on_left=bool(args.model_type in ["xlnet"]),  # pad on the left for xlnet
-        #             pad_token=tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0],
-        #             pad_token_segment_id=4 if args.model_type in ["xlnet"] else 0,
-        #         )
-        #
-        #         # Convert to Tensors and build dataset
-        #         all_input_ids = torch.tensor([f.input_ids for f in features], dtype=torch.long)
-        #         all_attention_mask = torch.tensor([f.attention_mask for f in features], dtype=torch.long)
-        #         all_token_type_ids = torch.tensor([f.token_type_ids for f in features], dtype=torch.long)
-        #         if output_mode == "classification":
-        #             all_labels = torch.tensor([f.label for f in features], dtype=torch.long)
-        #         elif output_mode == "regression":
-        #             all_labels = torch.tensor([f.label for f in features], dtype=torch.float)
-        #
-        #         dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels)
-        #
-        #         return dataset
-        #     else:
-        #         if X_orig is None:  # DA for supervised learning
-        #             examples = (processor.get_augm_examples(X_augm, y_augm))
-        #         else:  # DA for semi-supervised learning (consistency loss)
-        #             orig_examples = (processor.get_train_examples(args.data_dir))
-        #             orig_examples = [np.array(orig_examples)[i] for i in X_inds]
-        #             augm_examples = (processor.get_augm_examples(X_augm, y_augm))
-        #
-        #             assert len(orig_examples)==len(augm_examples), "orig len {}, augm len {}".format(len(orig_examples),
-        #                                                                                                  len(augm_examples))
-        #             all_input_ids = []
-        #             all_attention_mask = []
-        #             all_token_type_ids = []
-        #             all_labels = []
-        #
-        #             for examples in [orig_examples, augm_examples]:
-        #                 features = convert_examples_to_features(
-        #                     examples,
-        #                     tokenizer,
-        #                     label_list=label_list,
-        #                     max_length=args.max_seq_length,
-        #                     output_mode=output_mode,
-        #                     pad_on_left=bool(args.model_type in ["xlnet"]),  # pad on the left for xlnet
-        #                     pad_token=tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0],
-        #                     pad_token_segment_id=4 if args.model_type in ["xlnet"] else 0,
-        #                 )
-        #
-        #                 all_input_ids.append(torch.tensor([f.input_ids for f in features], dtype=torch.long))
-        #                 all_attention_mask.append(torch.tensor([f.attention_mask for f in features], dtype=torch.long))
-        #                 all_token_type_ids.append(torch.tensor([f.token_type_ids for f in features], dtype=torch.long))
-        #                 if output_mode == "classification":
-        #                     all_labels.append(torch.tensor([f.label for f in features], dtype=torch.long))
-        #                 elif output_mode == "regression":
-        #                     all_labels.append(torch.tensor([f.label for f in features], dtype=torch.float))
-        #
-        #             dataset = TensorDataset(all_input_ids[0], all_attention_mask[0], all_token_type_ids[0],
-        #                                     all_input_ids[1], all_attention_mask[1], all_token_type_ids[1],
-        #                                     all_labels[0])
-        #
-        #             return dataset
+
         ################################################################
         if X_inds is not None:
             examples = list(np.array(examples)[X_inds])
@@ -322,9 +243,6 @@ def get_glue_tensor_dataset(X_inds, args, task, tokenizer, train=False,
             pad_token=tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0],
             pad_token_segment_id=4 if args.model_type in ["xlnet"] else 0,
         )
-        # if args.local_rank in [-1, 0]:
-        #     logger.info("Saving features into cached file %s", cached_features_file)
-            # torch.save(features, cached_features_file)
 
     if augm_features is not None:
         # append train + augmented features (for DA supervised learning)
@@ -355,9 +273,6 @@ def get_glue_tensor_dataset(X_inds, args, task, tokenizer, train=False,
         dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels)
 
         if X_inds is not None and augm_features is None:
-         assert len(dataset) == len(X_inds)
-
-        # if test:
-        #     torch.save(features, cached_features_file)
+            assert len(dataset) == len(X_inds)
 
         return dataset

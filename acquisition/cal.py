@@ -3,38 +3,38 @@ import logging
 import os
 import sys
 
-import torch
-import faiss
-
 import numpy as np
+import torch
 import torch.nn.functional as F
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.neighbors.dist_metrics import DistanceMetric
 from torch import nn
 from torch.nn.functional import normalize
-from sklearn.neighbors import KNeighborsClassifier
 from tqdm import tqdm
+
+# import faiss
 
 sys.path.append("../../")
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
-from acquisition.bertscorer import calculate_bertscore
+from utilities.data_loader import get_glue_tensor_dataset
 from utilities.preprocessors import processors
+from utilities.trainers import my_evaluate
+
+# from acquisition.bertscorer import calculate_bertscore
 
 
+logger = logging.getLogger(__name__)
 
-from models.deep.main_transformer import get_glue_tensor_dataset, my_evaluate
-# from modules.acquisition.bertscorer import calculate_bertscore
-# from utilities.general_preprocessors import processors
 
-def cal(args, annotations_per_iteration, X_original, y_original,
-                      labeled_inds, candidate_inds, discarded_inds, original_inds,
-                      tokenizer,
-                      train_results,
-                      results_dpool, logits_dpool, bert_representations=None,
-                      train_dataset=None,
-                      model=None,
-                      imdb_exp=False,
-                      tfidf_dtrain_reprs=None, tfidf_dpool_reprs=None):
+def contrastive_acquisition(args, annotations_per_iteration, X_original, y_original,
+                            labeled_inds, candidate_inds, discarded_inds, original_inds,
+                            tokenizer,
+                            train_results,
+                            results_dpool, logits_dpool, bert_representations=None,
+                            train_dataset=None,
+                            model=None,
+                            tfidf_dtrain_reprs=None, tfidf_dpool_reprs=None):
     """
     Acquire data by choosing those with the largest KL divergence in the predictions between a candidate dpool input
      and its nearest neighbours in the training set.
@@ -42,10 +42,10 @@ def cal(args, annotations_per_iteration, X_original, y_original,
     """
     processor = processors[args.task_name]()
     if model is None and train_results is not None:
-        model=train_results['model']
-    nei_stats_list=None
+        model = train_results['model']
+
     if args.bert_score:
-        # BERT score representations
+        # BERT score representations (ablation)
         train_dataset = get_glue_tensor_dataset(labeled_inds, args, args.task_name, tokenizer, train=True)
         _train_results, train_logits = my_evaluate(train_dataset, args, model, prefix="",
                                                    al_test=False, mc_samples=None,
@@ -62,26 +62,13 @@ def cal(args, annotations_per_iteration, X_original, y_original,
         pairs = []
         dist = DistanceMetric.get_metric('euclidean')
         num_adv = None
-        for unlab_i, zipped in enumerate(zip(candidate_inds,logits_dpool)):
+        for unlab_i, zipped in enumerate(zip(candidate_inds, logits_dpool)):
             candidate, unlab_logit = zipped
             all_similarities = bert_score_matrix[candidate]
             labeled_data_similarities = all_similarities[labeled_inds]
             labeled_neighborhood_inds = np.argpartition(labeled_data_similarities, -args.num_nei)[-args.num_nei:]
             distances_ = labeled_data_similarities[labeled_neighborhood_inds]
             distances.append(distances_)
-            if imdb_exp:
-                if unlab_i >= 707:
-                    contr_id = unlab_i
-                    ori_id = contr_id - 707
-                    # ori = train_bert_emb[ori_id]
-                    # contr = unlab_representation
-                    distance = all_similarities[ori_id]
-                    found_correct_nei = True if ori_id in labeled_neighborhood_inds else False
-                    # print('ori {}, contr{}, hit {}'.format(ori_id, contr_id, found_correct_nei))
-                    pairs.append({'ori_id': ori_id, 'contr_id': contr_id, 'ori_text': X_original[ori_id],
-                                  'contr_text': X_original[1000 + contr_id],
-                                  'distance': distance, 'found_neigubours': labeled_neighborhood_inds, 'distances_nei': distances_,
-                                  'hit': found_correct_nei})
             labeled_neighbours_labels = train_dataset.tensors[3][labeled_neighborhood_inds]
             neigh_prob = F.softmax(train_logits[labeled_neighborhood_inds], dim=-1)
 
@@ -115,7 +102,7 @@ def cal(args, annotations_per_iteration, X_original, y_original,
             selected_inds = np.argpartition(kl_scores, -annotations_per_iteration)[-annotations_per_iteration:]
 
     elif args.tfidf and args.cls:
-        # Half neighbourhood with tfidf - half with cls embs
+        # Half neighbourhood with tfidf - half with cls embs (ablation)
         if train_dataset is None:
             train_dataset = get_glue_tensor_dataset(labeled_inds, args, args.task_name, tokenizer, train=True)
         _train_results, train_logits = my_evaluate(train_dataset, args, model, prefix="",
@@ -128,8 +115,8 @@ def cal(args, annotations_per_iteration, X_original, y_original,
         dpool_tfidf = tfidf_dpool_reprs
 
         embs = 'bert_cls'
-        dtrain_cls =  normalize(_train_results[embs]).detach().cpu()
-        dpool_cls =  normalize(results_dpool[embs]).detach().cpu()
+        dtrain_cls = normalize(_train_results[embs]).detach().cpu()
+        dpool_cls = normalize(results_dpool[embs]).detach().cpu()
 
         distances = None
         nei_stats_list = []
@@ -152,17 +139,19 @@ def cal(args, annotations_per_iteration, X_original, y_original,
             num_adv = 0
             distances = []
             pairs = []
-            label_list=processor.get_labels()
+            label_list = processor.get_labels()
             label_map = {label: i for i, label in enumerate(label_list)}
-            for unlab_i, unlab_logit in enumerate(tqdm(logits_dpool, desc="Finding neighbours for every unlabeled data point")):
+            for unlab_i, unlab_logit in enumerate(
+                    tqdm(logits_dpool, desc="Finding neighbours for every unlabeled data point")):
                 # unlab candidate data point
                 unlab_true_label = label_map[y_original[candidate_inds[unlab_i]]]
                 unlab_pred_label = int(np.argmax(unlab_logit))
-                correct_prediction = True if unlab_true_label==unlab_pred_label else False
+                correct_prediction = True if unlab_true_label == unlab_pred_label else False
 
                 # tfidf neighbourhood
-                unlab_tfidf=dpool_tfidf[unlab_i]
-                distances_tfidf, neighbours_tfidf = neigh_tfidf.kneighbors(X=[unlab_tfidf.numpy()], return_distance=True)
+                unlab_tfidf = dpool_tfidf[unlab_i]
+                distances_tfidf, neighbours_tfidf = neigh_tfidf.kneighbors(X=[unlab_tfidf.numpy()],
+                                                                           return_distance=True)
                 labeled_neighbours_tfidf_inds = np.array(labeled_inds)[neighbours_tfidf[0]]  # orig inds
                 labeled_neighbours_tfidf_labels = train_dataset.tensors[3][neighbours_tfidf[0]]
                 logits_neigh_tfidf = [train_logits[n] for n in neighbours_tfidf]
@@ -170,7 +159,7 @@ def cal(args, annotations_per_iteration, X_original, y_original,
                 neigh_prob_tfidf = F.softmax(train_logits[neighbours_tfidf], dim=-1)
 
                 # cls neighbourhood
-                unlab_cls=dpool_cls[unlab_i]
+                unlab_cls = dpool_cls[unlab_i]
                 distances_cls, neighbours_cls = neigh_cls.kneighbors(X=[unlab_cls.numpy()], return_distance=True)
                 labeled_neighbours_cls_inds = np.array(labeled_inds)[neighbours_cls[0]]  # orig inds
                 labeled_neighbours_cls_labels = train_dataset.tensors[3][neighbours_cls[0]]
@@ -187,41 +176,24 @@ def cal(args, annotations_per_iteration, X_original, y_original,
                 assert sorted(common_neighbours_labels_orig) == sorted(common_neighbours_labels)
 
                 # same predicted label with neighbourhood (percentage)
-                pred_label_tfif_per = len([x for x in labeled_neighbours_tfidf_labels if x==unlab_pred_label])/len(labeled_neighbours_tfidf_labels)
-                pred_label_cls_per = len([x for x in labeled_neighbours_cls_labels if x==unlab_pred_label])/len(labeled_neighbours_cls_labels)
+                pred_label_tfif_per = len([x for x in labeled_neighbours_tfidf_labels if x == unlab_pred_label]) / len(
+                    labeled_neighbours_tfidf_labels)
+                pred_label_cls_per = len([x for x in labeled_neighbours_cls_labels if x == unlab_pred_label]) / len(
+                    labeled_neighbours_cls_labels)
 
                 # same true label with neighbourhood (percentage)
-                true_label_tfif_per = len([x for x in labeled_neighbours_tfidf_labels if x==unlab_true_label])/len(labeled_neighbours_tfidf_labels)
-                true_label_cls_per = len([x for x in labeled_neighbours_cls_labels if x==unlab_true_label])/len(labeled_neighbours_cls_labels)
+                true_label_tfif_per = len([x for x in labeled_neighbours_tfidf_labels if x == unlab_true_label]) / len(
+                    labeled_neighbours_tfidf_labels)
+                true_label_cls_per = len([x for x in labeled_neighbours_cls_labels if x == unlab_true_label]) / len(
+                    labeled_neighbours_cls_labels)
 
-                nei_stats = {'pred_label_tfif_per':pred_label_tfif_per,
-                             'pred_label_cls_per':pred_label_cls_per,
-                             'true_label_tfif_per':true_label_tfif_per,
-                             'true_label_cls_per':true_label_cls_per,
+                nei_stats = {'pred_label_tfif_per': pred_label_tfif_per,
+                             'pred_label_cls_per': pred_label_cls_per,
+                             'true_label_tfif_per': true_label_tfif_per,
+                             'true_label_cls_per': true_label_cls_per,
                              'common_neighbours': len(common_neighbours_inds_orig)}
                 nei_stats_list.append(nei_stats)
 
-                if imdb_exp:
-                    if unlab_i>=707:
-                        # if len(distances) >= len(X_original)-1000:
-                        #     pass
-                        # else:
-                            # contr_id=len(distances)
-                        contr_id=unlab_i
-                        ori_id=contr_id-707
-                        # ori=train_bert_emb[ori_id]
-                        # contr=unlab_representation
-                        # distance=dist.pairwise([ori.numpy()],[contr.numpy()])
-                        total_neighbours=list(neighbours_tfidf[0])+list(neighbours_cls[0])
-                        found_correct_nei = True if ori_id in total_neighbours else False
-                        # print('ori {}, contr{}, hit {}'.format(ori_id, contr_id, found_correct_nei))
-                        pairs.append({'ori_id': ori_id, 'contr_id': contr_id, 'ori_text': X_original[ori_id],
-                                      'contr_text': X_original[1000+contr_id],
-                                      # 'distance': distance,
-                                      'found_neigubours': total_neighbours,
-                                      # 'distances_nei': distances_[0],
-                                      'hit': found_correct_nei,
-                                      'nei_stats': nei_stats})
                 # calculate score
                 if args.ce:
                     kl = np.array([criterion(unlab_logit.view(-1, args.num_classes), label.view(-1)) for label in
@@ -231,8 +203,9 @@ def cal(args, annotations_per_iteration, X_original, y_original,
                 else:
                     uda_softmax_temp = 1
                     candidate_log_prob = F.log_softmax(unlab_logit / uda_softmax_temp, dim=-1)
-                    kl = np.array([torch.sum(criterion(candidate_log_prob, n), dim=-1).numpy() for n in neigh_prob_tfidf]
-                                  + [torch.sum(criterion(candidate_log_prob, n), dim=-1).numpy() for n in neigh_prob_cls])
+                    kl = np.array(
+                        [torch.sum(criterion(candidate_log_prob, n), dim=-1).numpy() for n in neigh_prob_tfidf]
+                        + [torch.sum(criterion(candidate_log_prob, n), dim=-1).numpy() for n in neigh_prob_cls])
                 # confidence masking
                 # if args.conf_mask:
                 #     conf_mask = torch.max(neigh_prob, dim=-1)[0] > args.conf_thresh
@@ -271,7 +244,7 @@ def cal(args, annotations_per_iteration, X_original, y_original,
             dtrain_reprs = tfidf_dtrain_reprs
             dpool_reprs = tfidf_dpool_reprs
         else:
-            # Use representations of current fine-tuned model
+            # Use representations of current fine-tuned model *CAL*
             if args.mean_embs and args.cls:
                 dtrain_reprs = torch.cat((_train_results['bert_mean_inputs'], _train_results['bert_cls']), dim=1)
                 dpool_reprs = torch.cat((results_dpool['bert_mean_inputs'], results_dpool['bert_cls']), dim=1)
@@ -299,7 +272,7 @@ def cal(args, annotations_per_iteration, X_original, y_original,
 
         distances = None
 
-        num_adv=None
+        num_adv = None
         if not args.knn_lab:
             # centroids: UNLABELED data points
             neigh = KNeighborsClassifier(n_neighbors=args.num_nei)
@@ -312,7 +285,8 @@ def cal(args, annotations_per_iteration, X_original, y_original,
             num_adv = 0
             distances = []
             pairs = []
-            for unlab_i, candidate in enumerate(tqdm(zip(dpool_bert_emb, logits_dpool), desc="Finding neighbours for every unlabeled data point")):
+            for unlab_i, candidate in enumerate(
+                    tqdm(zip(dpool_bert_emb, logits_dpool), desc="Finding neighbours for every unlabeled data point")):
                 # find indices of closesest "neighbours" in train set
                 unlab_representation, unlab_logit = candidate
                 distances_, neighbours = neigh.kneighbors(X=[candidate[0].numpy()], return_distance=True)
@@ -326,28 +300,11 @@ def cal(args, annotations_per_iteration, X_original, y_original,
                 neigh_prob = F.softmax(train_logits[neighbours], dim=-1)
                 pred_candidate = [np.argmax(candidate[1])]
                 num_diff_pred = len(list(set(preds_neigh).intersection(pred_candidate)))
-                # print('Different predictions for similar inputs: {}'.format(num_diff_pred))
-                if imdb_exp:
-                    if unlab_i>=707:
-                        # if len(distances) >= len(X_original)-1000:
-                        #     pass
-                        # else:
-                            # contr_id=len(distances)
-                        contr_id=unlab_i
-                        ori_id=contr_id-707
-                        ori=train_bert_emb[ori_id]
-                        contr=unlab_representation
-                        distance=dist.pairwise([ori.numpy()],[contr.numpy()])
-                        found_correct_nei = True if ori_id in neighbours else False
-                        # print('ori {}, contr{}, hit {}'.format(ori_id, contr_id, found_correct_nei))
-                        pairs.append({'ori_id': ori_id, 'contr_id': contr_id, 'ori_text': X_original[ori_id],
-                                      'contr_text': X_original[1000+contr_id],
-                                      'distance': distance, 'found_neigubours': neighbours, 'distances_nei': distances_[0],
-                                      'hit': found_correct_nei})
-                    # print()
+
                 if num_diff_pred > 0: num_adv += 1
                 if args.ce:
-                    kl = np.array([criterion(unlab_logit.view(-1, args.num_classes), label.view(-1)) for label in labeled_neighbours_labels])
+                    kl = np.array([criterion(unlab_logit.view(-1, args.num_classes), label.view(-1)) for label in
+                                   labeled_neighbours_labels])
                 else:
                     uda_softmax_temp = 1
                     candidate_log_prob = F.log_softmax(candidate[1] / uda_softmax_temp, dim=-1)
@@ -392,7 +349,7 @@ def cal(args, annotations_per_iteration, X_original, y_original,
             print(index.ntotal)
             k = args.num_nei  # we want 4 similar vectors
             distances, neighbours = index.search(xq, k)
-            kl_scores_per_unlab = np.array([0.]*len(candidate_inds))
+            kl_scores_per_unlab = np.array([0.] * len(candidate_inds))
             for i, pair in enumerate(neighbours):
                 # labeled_logit = train_logits[i]
                 labeled_prob = F.softmax(train_logits[i], dim=-1)
@@ -407,26 +364,29 @@ def cal(args, annotations_per_iteration, X_original, y_original,
                 if args.ce:
                     # kl = np.array([criterion(F.log_softmax(logits_dpool[n] / 1, dim=-1), labeled_prob).numpy()
                     #                for n in pair])
-                    kl = np.array([criterion(logits_dpool[n].view(-1, args.num_classes), labeled_neighbours_label.view(-1)) for n in
-                              pair])
+                    kl = np.array(
+                        [criterion(logits_dpool[n].view(-1, args.num_classes), labeled_neighbours_label.view(-1)) for n
+                         in
+                         pair])
                 else:
                     kl = np.array([criterion(F.log_softmax(logits_dpool[n] / 1, dim=-1), labeled_prob).numpy()
                                    for n in pair])
                 # if kl socre calucalte before update with mean
-                scores = np.array([np.append(kl_scores_per_unlab[pair][i],kl[i]) for i in range(0,len(pair))]).mean(axis=1)
+                scores = np.array([np.append(kl_scores_per_unlab[pair][i], kl[i]) for i in range(0, len(pair))]).mean(
+                    axis=1)
                 # replace old scores for these unlabeled data
                 kl_scores_per_unlab[pair] = scores
 
             # select argmax
-            selected_inds = np.argpartition(kl_scores_per_unlab, -annotations_per_iteration)[-annotations_per_iteration:]
+            selected_inds = np.argpartition(kl_scores_per_unlab, -annotations_per_iteration)[
+                            -annotations_per_iteration:]
             print()
-
 
     # map from dpool inds to original inds
     sampled_ind = list(np.array(candidate_inds)[selected_inds])  # in terms of original inds
 
     if num_adv is not None:
-        num_adv_per = round(num_adv / len(candidate_inds),2)
+        num_adv_per = round(num_adv / len(candidate_inds), 2)
 
     y_lab = np.asarray(y_original, dtype='object')[labeled_inds]
     X_unlab = np.asarray(X_original, dtype='object')[candidate_inds]
@@ -469,9 +429,9 @@ def cal(args, annotations_per_iteration, X_original, y_original,
     else:
         # assert len(labeled_inds) + len(candidate_inds) + len(discarded_inds) == len(X_original), "labeled {}, " \
         assert len(labeled_inds) + len(candidate_inds) + len(discarded_inds) == len(original_inds), "labeled {}, " \
-                                                                                                 "candidate {}, " \
-                                                                                                 "disgarded {}, " \
-                                                                                                 "original {}".format(
+                                                                                                    "candidate {}, " \
+                                                                                                    "disgarded {}, " \
+                                                                                                    "original {}".format(
             len(labeled_inds),
             len(candidate_inds),
             len(discarded_inds),
@@ -496,9 +456,5 @@ def cal(args, annotations_per_iteration, X_original, y_original,
             stats['distances'] = distances
         else:
             stats['distances'] = [float(x) for x in distances.mean(axis=1)]
-    # if nei_stats_list is not None:
-    #     stats['nei_stats'] = nei_stats_list
-    if imdb_exp:
-        return sampled_ind, stats, pairs
-    else:
-        return sampled_ind, stats
+
+    return sampled_ind, stats

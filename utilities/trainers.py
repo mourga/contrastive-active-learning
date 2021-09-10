@@ -1,26 +1,30 @@
 """
-Code from
-(1) https://github.com/SanghunYun/UDA_pytorch
+This script contains code from
+- https://github.com/SanghunYun/UDA_pytorch
+- https://huggingface.co/transformers/v3.1.0/examples.html
 """
 import glob
 import json
 import logging
 import os
 import shutil
+import sys
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from sklearn.metrics import f1_score, precision_score, recall_score
 from torch import nn
 from torch.optim import AdamW
-import torch.nn.functional as F
-
 from torch.utils.data import SequentialSampler, DataLoader, TensorDataset, RandomSampler, DistributedSampler
-from transformers import AutoTokenizer, AutoModelForSequenceClassification, AutoConfig, get_linear_schedule_with_warmup
 from tqdm import tqdm, trange
+from transformers import AutoTokenizer, AutoModelForSequenceClassification, AutoConfig, get_linear_schedule_with_warmup
 from transformers.data.metrics import simple_accuracy
 
-from sys_config import EXP_DIR, CKPT_DIR
+sys.path.append("../../")
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+
+from sys_config import EXP_DIR
 from utilities.data_loader import get_glue_tensor_dataset
 from utilities.early_stopping import EarlyStopping
 from utilities.general import create_dir, number_h
@@ -29,9 +33,11 @@ from utilities.preprocessors import output_modes, processors, convert_examples_t
 
 logger = logging.getLogger(__name__)
 
+
 def _get_device():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     return device
+
 
 def get_device():
     "get device (CPU or GPU)"
@@ -40,8 +46,10 @@ def get_device():
     print("%s (%d GPUs)" % (device, n_gpu))
     return device
 
+
 def torch_device_one():
     return torch.tensor(1.).to(_get_device())
+
 
 # TSA
 def get_tsa_thresh(schedule, global_step, num_train_steps, start, end):
@@ -57,14 +65,15 @@ def get_tsa_thresh(schedule, global_step, num_train_steps, start, end):
     output = threshold * (end - start) + start
     return output.to(_get_device())
 
+
 def repeat_dataloader(iterable):
     """ repeat dataloader """
     while True:
         for x in iterable:
             yield x
 
-def get_loss(args, model, sup_batch, unsup_batch, global_step, sup_criterion, unsup_criterion):
 
+def get_loss(args, model, sup_batch, unsup_batch, global_step, sup_criterion, unsup_criterion):
     # logits -> prob(softmax) -> log_prob(log_softmax)
 
     # batch
@@ -79,21 +88,10 @@ def get_loss(args, model, sup_batch, unsup_batch, global_step, sup_criterion, un
 
     # logits
     logits = model(input_ids, segment_ids, input_mask)
-    logits=logits[0]
+    logits = logits[0]
     # sup loss
     sup_size = label_ids.shape[0]
     sup_loss = sup_criterion(logits[:sup_size], label_ids)  # shape : train_batch_size
-    # # if args.tsa:
-    # if True:
-    #     # tsa_thresh = get_tsa_thresh(cfg.tsa, global_step, cfg.total_steps, start=1. / logits.shape[-1], end=1)
-    #     tsa_thresh = get_tsa_thresh("linear_schedule", global_step, args.total_steps, start=1. / logits.shape[-1], end=1)
-    #     larger_than_threshold = torch.exp(-sup_loss) > tsa_thresh  # prob = exp(log_prob), prob > tsa_threshold
-    #     # larger_than_threshold = torch.sum(  F.softmax(pred[:sup_size]) * torch.eye(num_labels)[sup_label_ids]  , dim=-1) > tsa_threshold
-    #     loss_mask = torch.ones_like(label_ids, dtype=torch.float32) * (
-    #                 1 - larger_than_threshold.type(torch.float32))
-    #     sup_loss = torch.sum(sup_loss * loss_mask, dim=-1) / torch.max(torch.sum(loss_mask, dim=-1),
-    #                                                                    torch_device_one())
-    # else:
     sup_loss = torch.mean(sup_loss)
 
     # unsup loss
@@ -141,6 +139,7 @@ def get_loss(args, model, sup_batch, unsup_batch, global_step, sup_criterion, un
 
         return final_loss, sup_loss, unsup_loss
 
+
 def train(args, train_dataset, eval_dataset, model, tokenizer, unsup_dataset=None):
     """ Train the model """
     total_params = sum(p.numel() for p in model.parameters())
@@ -150,26 +149,11 @@ def train(args, train_dataset, eval_dataset, model, tokenizer, unsup_dataset=Non
     print("Total Params:", number_h(total_params))
     print("Total Trainable Params:", number_h(total_trainable_params))
 
-    # if args.local_rank in [-1, 0]:
-    #     tb_writer = SummaryWriter()
-
-    # UDA
     args.train_batch_size = args.per_gpu_train_batch_size * max(1, args.n_gpu)
     sup_criterion = nn.CrossEntropyLoss(reduction='none')
     sup_sampler = RandomSampler(train_dataset) if args.local_rank == -1 else DistributedSampler(train_dataset)
     sup_loader = DataLoader(train_dataset, sampler=sup_sampler, batch_size=args.train_batch_size)
     data_loader = sup_loader
-    # if args.uda:
-    #     assert unsup_dataset is not None
-    #     unsup_criterion = nn.KLDivLoss(reduction='none')
-    #     unsup_sampler = RandomSampler(unsup_dataset) if args.local_rank == -1 else DistributedSampler(unsup_dataset)
-    #     unsup_loader = DataLoader(unsup_dataset, sampler=unsup_sampler, batch_size=args.train_batch_size*2)
-    #     data_loader = unsup_loader
-    #     sup_loader = repeat_dataloader(sup_loader)
-    #     data_iter = [sup_loader, unsup_loader] # if cfg.mode=='train' \
-    #         # else [data.sup_data_iter(), data.unsup_data_iter(), data.eval_data_iter()]  # train_eval
-    # else:
-    #     data_iter = [sup_loader]
 
     if args.max_steps > 0:
         t_total = args.max_steps
@@ -179,17 +163,6 @@ def train(args, train_dataset, eval_dataset, model, tokenizer, unsup_dataset=Non
         # t_total = len(train_dataloader) // args.gradient_accumulation_steps * args.num_train_epochs
         t_total = len(data_loader) // args.gradient_accumulation_steps * args.num_train_epochs
     args.total_steps = t_total
-    # train_dataloader = sup_loader
-
-    # args.train_batch_size = args.per_gpu_train_batch_size * max(1, args.n_gpu)
-    # train_sampler = RandomSampler(train_dataset) if args.local_rank == -1 else DistributedSampler(train_dataset)
-    # train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=args.train_batch_size)
-
-    # if args.max_steps > 0:
-    #     t_total = args.max_steps
-    #     args.num_train_epochs = args.max_steps // (len(train_dataloader) // args.gradient_accumulation_steps) + 1
-    # else:
-    #     t_total = len(train_dataloader) // args.gradient_accumulation_steps * args.num_train_epochs
 
     # Prepare optimizer and schedule (linear warmup and decay)
     no_decay = ["bias", "LayerNorm.weight"]
@@ -201,35 +174,10 @@ def train(args, train_dataset, eval_dataset, model, tokenizer, unsup_dataset=Non
         {"params": [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], "weight_decay": 0.0},
     ]
 
-
     optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
     scheduler = get_linear_schedule_with_warmup(
         optimizer, num_warmup_steps=args.warmup_steps, num_training_steps=t_total
     )
-
-    # # Check if saved optimizer or scheduler states exist
-    # if os.path.isfile(os.path.join(args.model_name_or_path, "optimizer.pt")) and os.path.isfile(
-    #         os.path.join(args.model_name_or_path, "scheduler.pt")
-    # ):
-    #     # Load in optimizer and scheduler states
-    #     optimizer.load_state_dict(torch.load(os.path.join(args.model_name_or_path, "optimizer.pt")))
-    #     scheduler.load_state_dict(torch.load(os.path.join(args.model_name_or_path, "scheduler.pt")))
-
-    # if hasattr(args, 'adaptation'):
-    #     if args.adaptation or args.adaptation_best and args.adapt_new:
-    #         optim_path = args.output_dir
-    #         if args.adaptation and hasattr(args, 'previous_output_dir'):
-    #             optim_path = args.previous_output_dir
-    #         elif args.adaptation_best and hasattr(args, 'best_output_dir'):
-    #             optim_path = args.best_output_dir
-    #
-    #         # Check if saved optimizer or scheduler states exist
-    #         if os.path.isfile(os.path.join(optim_path, "optimizer.pt")) and os.path.isfile(
-    #                 os.path.join(optim_path, "scheduler.pt")
-    #         ):
-    #             # Load in optimizer and scheduler states
-    #             optimizer.load_state_dict(torch.load(os.path.join(optim_path, "optimizer.pt")))
-    #             scheduler.load_state_dict(torch.load(os.path.join(optim_path, "scheduler.pt")))
 
     if args.fp16:
         try:
@@ -267,20 +215,6 @@ def train(args, train_dataset, eval_dataset, model, tokenizer, unsup_dataset=Non
     global_step = 0
     epochs_trained = 0
     steps_trained_in_current_epoch = 0
-    # Check if continuing training from a checkpoint
-    # if os.path.exists(args.model_name_or_path):
-    #     # set global_step to global_step of last saved checkpoint from model path
-    #     try:
-    #         global_step = int(args.model_name_or_path.split("-")[-1].split("/")[0])
-    #     except ValueError:
-    #         global_step = 0
-    #     epochs_trained = global_step // (len(train_dataloader) // args.gradient_accumulation_steps)
-    #     steps_trained_in_current_epoch = global_step % (len(train_dataloader) // args.gradient_accumulation_steps)
-    #
-    #     logger.info("  Continuing training from checkpoint, will skip to saved global_step")
-    #     logger.info("  Continuing training from epoch %d", epochs_trained)
-    #     logger.info("  Continuing training from global step %d", global_step)
-    #     logger.info("  Will skip the first %d steps in the first epoch", steps_trained_in_current_epoch)
 
     tr_loss, logging_loss = 0.0, 0.0
     best_val_loss, best_val_acc = 100000000.0, 0.0
@@ -292,11 +226,8 @@ def train(args, train_dataset, eval_dataset, model, tokenizer, unsup_dataset=Non
     train_iterator = trange(
         epochs_trained, int(args.num_train_epochs), desc="Epoch", disable=args.local_rank not in [-1, 0],
     )
-    # set_seed(args)  # Added here for reproducibility
+    # set_seed(args)  # Added here for reproducibility - we added it in the beggining of main script
     for _ in train_iterator:
-        # if args.uda:
-        #     epoch_iterator = tqdm(unsup_loader, desc="Iteration", disable=args.local_rank not in [-1, 0])
-        # else:
         epoch_iterator = tqdm(sup_loader, desc="Iteration", disable=args.local_rank not in [-1, 0])
 
         for step, batch in enumerate(epoch_iterator):
@@ -307,19 +238,7 @@ def train(args, train_dataset, eval_dataset, model, tokenizer, unsup_dataset=Non
                 continue
 
             model.train()
-            # if args.uda:
-            #     sup_batch = [t.to(args.device) for t in next(sup_loader)]
-            #     unsup_batch = tuple(t.to(args.device) for t in batch)
-            #
-            #     optimizer.zero_grad()
-            #     final_loss, sup_loss, unsup_loss = get_loss(args, model, sup_batch, unsup_batch, global_step,
-            #                                                 sup_criterion, unsup_criterion)
-            #     logger.info('final=%5.3f unsup=%5.3f sup=%5.3f' \
-            #                              % (final_loss.item(), unsup_loss.item(), sup_loss.item()))
-            #     epoch_iterator.set_description('final=%5.3f unsup=%5.3f sup=%5.3f' \
-            #                              % (final_loss.item(), unsup_loss.item(), sup_loss.item()))
-            #     loss = final_loss
-            # else:
+
             batch = tuple(t.to(args.device) for t in batch)
             inputs = {"input_ids": batch[0], "attention_mask": batch[1], "labels": batch[3]}
             if args.model_type != "distilbert":
@@ -359,7 +278,7 @@ def train(args, train_dataset, eval_dataset, model, tokenizer, unsup_dataset=Non
                 model.zero_grad()
                 global_step += 1
 
-                if args.local_rank in [-1, 0] and args.logging_steps > 0 and global_step % args.logging_steps == 0\
+                if args.local_rank in [-1, 0] and args.logging_steps > 0 and global_step % args.logging_steps == 0 \
                         or global_step == t_total:
                     logs = {}
                     # Evaluate
@@ -411,27 +330,7 @@ def train(args, train_dataset, eval_dataset, model, tokenizer, unsup_dataset=Non
                     logs["train_loss"] = loss_scalar
                     logging_loss = tr_loss
 
-                    # for key, value in logs.items():
-                    #     tb_writer.add_scalar(key, value, global_step)
                     print(json.dumps({**logs, **{"step": global_step}}))
-
-                # if args.local_rank in [-1, 0] and args.save_steps > 0 and global_step % args.save_steps == 0:
-                #     # Save model checkpoint
-                #     output_dir = os.path.join(args.output_dir, "checkpoint-{}".format(global_step))
-                #     if not os.path.exists(output_dir):
-                #         os.makedirs(output_dir)
-                #     model_to_save = (
-                #         model.module if hasattr(model, "module") else model
-                #     )  # Take care of distributed/parallel training
-                #     model_to_save.save_pretrained(output_dir)
-                #     tokenizer.save_pretrained(output_dir)
-                #
-                #     torch.save(args, os.path.join(output_dir, "training_args.bin"))
-                #     logger.info("Saving model checkpoint to %s", output_dir)
-                #
-                #     torch.save(optimizer.state_dict(), os.path.join(output_dir, "optimizer.pt"))
-                #     torch.save(scheduler.state_dict(), os.path.join(output_dir, "scheduler.pt"))
-                #     logger.info("Saving optimizer and scheduler states to %s", output_dir)
 
                 if args.device.type == 'cuda':
                     try:
@@ -446,9 +345,6 @@ def train(args, train_dataset, eval_dataset, model, tokenizer, unsup_dataset=Non
         if args.max_steps > 0 and global_step > args.max_steps:
             train_iterator.close()
             break
-
-    # if args.local_rank in [-1, 0]:
-    #     tb_writer.close()
 
     return global_step, tr_loss / global_step, float(best_val_acc), best_val_loss
 
@@ -563,14 +459,14 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False, overwrite_cac
     )
     if evaluate and original:
         cached_features_file = os.path.join(
-        args.data_dir,
-        "cached_{}_{}_{}_{}_original".format(
-            "dev" if evaluate else "train",
-            list(filter(None, args.model_name_or_path.split("/"))).pop(),
-            str(args.max_seq_length),
-            str(task),
-        ),
-    )
+            args.data_dir,
+            "cached_{}_{}_{}_{}_original".format(
+                "dev" if evaluate else "train",
+                list(filter(None, args.model_name_or_path.split("/"))).pop(),
+                str(args.max_seq_length),
+                str(task),
+            ),
+        )
     if os.path.exists(cached_features_file) and not overwrite_cache:
         logger.info("Loading features from cached file %s", cached_features_file)
         features = torch.load(cached_features_file)
@@ -611,7 +507,6 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False, overwrite_cac
 
     dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels)
     return dataset
-
 
 
 def my_evaluate(eval_dataset, args, model, prefix="", al_test=False, mc_samples=None,
@@ -718,7 +613,7 @@ def my_evaluate(eval_dataset, args, model, prefix="", al_test=False, mc_samples=
                             batch[2] if args.model_type in ["bert", "xlnet", "albert"] else None
                         )  # XLM, DistilBERT, RoBERTa, and XLM-RoBERTa don't use segment_ids
                     outputs = model(**inputs)
-                    labels = inputs.pop("labels",None)
+                    labels = inputs.pop("labels", None)
                     if hasattr(args, 'acquisition') or return_cls:
                         if return_cls or return_mean_output:
                             bert_output, bert_output_cls = model.bert(**inputs)
@@ -731,7 +626,6 @@ def my_evaluate(eval_dataset, args, model, prefix="", al_test=False, mc_samples=
 
                     eval_loss += tmp_eval_loss.mean().item()
                 nb_eval_steps += 1
-
 
                 if preds is None:
                     preds = logits.detach().cpu().numpy()
@@ -751,11 +645,11 @@ def my_evaluate(eval_dataset, args, model, prefix="", al_test=False, mc_samples=
                     #     bert_output_list = torch.cat((bert_output_list, bert_output),0)
 
                     if return_mean_embs:
-                        bert_mean_input_list = torch.cat((bert_mean_input_list, bert_mean_input),0)
+                        bert_mean_input_list = torch.cat((bert_mean_input_list, bert_mean_input), 0)
                     if return_mean_output:
                         bert_mean_output_list = torch.cat((bert_mean_output_list, bert_mean_output), 0)
                     if return_cls:
-                        bert_cls_list = torch.cat((bert_cls_list, bert_output_cls),0)
+                        bert_cls_list = torch.cat((bert_cls_list, bert_output_cls), 0)
 
             eval_loss = eval_loss / nb_eval_steps
             logits = torch.tensor(preds)
@@ -811,8 +705,8 @@ def train_transformer(args, train_dataset, eval_dataset, model, tokenizer, unsup
     args.warmup_steps = int(len(train_dataset) / args.per_gpu_train_batch_size * args.num_train_epochs / 10)
     if hasattr(args, "warmup_thr"):
         if args.warmup_thr is not None:
-            args.warmup_steps = min(int(len(train_dataset) / args.per_gpu_train_batch_size * args.num_train_epochs / 10), args.warmup_thr)
-
+            args.warmup_steps = min(
+                int(len(train_dataset) / args.per_gpu_train_batch_size * args.num_train_epochs / 10), args.warmup_thr)
 
     print("warmup steps: {}".format(args.warmup_steps))
     print("total steps: {}".format(int(len(train_dataset) / args.per_gpu_train_batch_size * args.num_train_epochs)))
@@ -824,67 +718,22 @@ def train_transformer(args, train_dataset, eval_dataset, model, tokenizer, unsup
     global_step, tr_loss, val_acc, val_loss = train(args, train_dataset, eval_dataset, model, tokenizer, unsup_dataset)
     logger.info(" global_step = %s, average loss = %s", global_step, tr_loss)
 
-    # AYTO GIATI TO KANW?
     # Evaluation
-    results = {}
     if args.do_eval and args.local_rank in [-1, 0]:
-        # tokenizer = tokenizer_class.from_pretrained(args.output_dir, do_lower_case=args.do_lower_case)
-        # checkpoints = [args.output_dir]
         checkpoints = [args.current_output_dir]
-        # if args.eval_all_checkpoints:
-        #     checkpoints = list(
-        #         # os.path.dirname(c) for c in sorted(glob.glob(args.output_dir + "/**/" + WEIGHTS_NAME, recursive=True))
-        #         os.path.dirname(c) for c in
-        #         sorted(glob.glob(args.current_output_dir + "/**/" + WEIGHTS_NAME, recursive=True))
-        #     )
-        #     logging.getLogger("transformers.modeling_utils").setLevel(logging.WARN)  # Reduce logging
         logger.info("Evaluate the following checkpoints: %s", checkpoints)
         for checkpoint in checkpoints:
             global_step = checkpoint.split("-")[-1] if len(checkpoints) > 1 else ""
             prefix = checkpoint.split("/")[-1] if checkpoint.find("checkpoint") != -1 else ""
 
-            # model = model_class.from_pretrained(checkpoint)
             model = AutoModelForSequenceClassification.from_pretrained(checkpoint)
             model.to(args.device)
 
             result, logits = my_evaluate(eval_dataset, args, model, prefix=prefix)
-            # result = dict((k + "_{}".format(global_step), v) for k, v in result.items())
-            # results.update(result)
 
-    result['val_adv_inds'] = []
-    if val_augm_dataset is not None:
-        inds = [ori2augm_val[x] for x in X_val_inds]
-        tensor_lists = [val_augm_dataset.tensors[i][inds] for i in range(len(eval_dataset.tensors))]
-        _val_augm_dataset = TensorDataset(*tensor_lists)  # sample augmended val set to be same length as val
-
-        augm_result, augm_logits = my_evaluate(_val_augm_dataset, args, model, prefix=prefix)
-        preds_ori = np.argmax(logits, axis=1)
-        preds_ori = preds_ori[inds]
-        preds_aug = np.argmax(augm_logits, axis=1)
-
-        assert len(preds_ori)==len(preds_aug), "ori {}, augm {}".format(len(preds_ori), len(preds_aug))
-
-        adversarial_inds = [i for i in range(len(preds_ori)) if preds_ori.numpy()[i] != preds_aug.numpy()[i]]
-        num_adv = len(adversarial_inds)
-
-
-
-        if num_adv != 0:
-            print('\nAugmenting val set with {} adversarial examples'.format(num_adv))
-            tensor_lists = [torch.cat((eval_dataset.tensors[i],val_augm_dataset.tensors[i][adversarial_inds]),0)
-                            for i in range(len(eval_dataset.tensors))]
-            eval_dataset = TensorDataset(*tensor_lists)
-            augm2ori_val = {v: k for k, v in ori2augm_val.items()}
-            adversarial_ori_inds = [augm2ori_val[i] for i in adversarial_inds]
-            X_val_inds = [i for i in X_val_inds if i not in adversarial_ori_inds]
-            result['val_adv_inds'] = list(map(int, adversarial_ori_inds))
-        else:
-            print('\nNo adversarial examples on val set...')
-            result['val_adv_inds'] = []
-            # adversarial_ori_inds = None
     eval_loss = val_loss
-    # return model, tr_loss, eval_loss, result, eval_dataset, X_val_inds
     return model, tr_loss, eval_loss, result
+
 
 def train_transformer_model(args, X_inds, X_val_inds=None,
                             iteration=None, val_acc_previous=None, uda_augm_dataset=None,
@@ -943,31 +792,14 @@ def train_transformer_model(args, X_inds, X_val_inds=None,
     logger.info("Training/evaluation parameters %s", args)
     # select after how many steps will evaluate during training
     # so that we will evaluate at least 5 times in one epoch
-    # if args.uda:
-    #     minibatch = int(len(uda_augm_dataset) / (args.per_gpu_train_batch_size*2 * max(1, args.n_gpu)))
-    # else:
     minibatch = int(len(X_inds) / (args.per_gpu_train_batch_size * max(1, args.n_gpu)))
     args.logging_steps = min(int(minibatch / 5), 500)
     if args.logging_steps < 1:
         args.logging_steps = 1
-    # if args.server == 'ford':
-    #     args.logging_steps = int(minibatch / 2) + 1
 
     # convert to tensor dataset
     train_dataset = get_glue_tensor_dataset(X_inds, args, args.task_name, tokenizer, train=True)
-    # if args.add_adv and dpool_augm_inds != []:
-    #     dpool_size = dpool_augm_dataset.tensors[0].size(0)
-    #     trainset_size = train_dataset.tensors[0].size(0)
-    #     dpool_augm_inds = [ori2augm[i] for i in dpool_augm_inds]
-    #     dpool_augm_inds = list(set(dpool_augm_inds))
-    #     num_augm_data = len(dpool_augm_inds)
-    #     tensor_lists = [torch.cat((train_dataset.tensors[i], dpool_augm_dataset.tensors[i][dpool_augm_inds]), 0)
-    #                     for i in range(len(train_dataset.tensors))]
-    #     new_train_dataset = TensorDataset(*tensor_lists)
-    #     new_trainset_size = new_train_dataset.tensors[0].size(0)
-    #     assert new_trainset_size == trainset_size + num_augm_data
-    #     train_dataset = new_train_dataset
-    # else:
+
     assert len(train_dataset) == len(X_inds)
 
     if eval_dataset is None:
@@ -976,7 +808,7 @@ def train_transformer_model(args, X_inds, X_val_inds=None,
         tensor_lists = [torch.cat((eval_dataset.tensors[i], val_augm_dataset.tensors[i][adversarial_val_inds]), 0)
                         for i in range(len(eval_dataset.tensors))]
         new_eval_dataset = TensorDataset(*tensor_lists)
-        eval_dataset=new_eval_dataset
+        eval_dataset = new_eval_dataset
     times_trained = 0
     val_acc_current = 0
     if val_acc_previous is None:
@@ -989,25 +821,10 @@ def train_transformer_model(args, X_inds, X_val_inds=None,
 
     logger.info("val acc current {}, val_acc previous {}".format(val_acc_current, val_acc_previous))
 
-    while (val_acc_current < val_acc_previous - 0.5 and times_trained < 2) or (times_trained==0):
-    # while val_acc_current < val_acc_previous - 0.005 and times_trained < 1:
+    while (val_acc_current < val_acc_previous - 0.5 and times_trained < 2) or (times_trained == 0):
+        # while val_acc_current < val_acc_previous - 0.005 and times_trained < 1:
         times_trained += 1
 
-        # if args.adaptation and val_acc_previous != 0.01:
-        #     # Load ckpt from previous iteration
-        #     checkpoint = args.previous_output_dir
-        #     # model = model_class.from_pretrained(checkpoint)
-        #     model = AutoModelForSequenceClassification.from_pretrained(checkpoint)
-        # elif args.adaptation_best and val_acc_previous != 0.01:
-        #     # Load ckpt from best iteration (highest accuracy)
-        #     checkpoint = args.best_output_dir
-        #     # model = model_class.from_pretrained(checkpoint)
-        #     model = AutoModelForSequenceClassification.from_pretrained(checkpoint)
-        # elif args.tapt is not None:
-        #     tapt_ckpt_path = os.path.join(CKPT_DIR, '{}_ft'.format(args.dataset_name), args.tapt)
-        #     model = AutoModelForSequenceClassification.from_pretrained(tapt_ckpt_path,
-        #                                                            config=config)
-        # else:
         model = AutoModelForSequenceClassification.from_pretrained(
             args.model_name_or_path,
             from_tf=bool(".ckpt" in args.model_name_or_path),
@@ -1025,7 +842,7 @@ def train_transformer_model(args, X_inds, X_val_inds=None,
         model, train_loss, val_loss, results = train_transformer(args, train_dataset,
                                                                  eval_dataset,
                                                                  model, tokenizer,
-                                                                               X_val_inds=X_val_inds)
+                                                                 X_val_inds=X_val_inds)
         accuracy = results['acc']
 
         val_acc_current = accuracy
