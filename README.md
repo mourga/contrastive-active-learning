@@ -12,6 +12,10 @@
 
 This repository contains code for running active learning with our proposed acquisition function, CAL, and other baselines. 
 
+<p align="center">
+  <img src="cal.png" width="500">
+</p>
+
 ### Acquisition functions 
 Specifically, there is code for running active learning with the following acquisition functions: `CAL`, `Entropy`, `Least Confidence`, `BALD`, `BatchBALD`, `ALPS`, `BADGE`, `BertKM` and `Random sampling`.
 ### Tasks & Datasets 
@@ -80,6 +84,17 @@ python run_al.py --dataset_name sst-2 --acquisition contrastive
 
 We would like to thank the community for releasing their code! This repository contains code from [HuggingFace](https://github.com/huggingface/transformers),  [ALPS](https://github.com/forest-snow/alps), and [BatchBALD](https://github.com/BlackHC/BatchBALD) repositories.
 
+<!-- 
+---
+## Reference
+```
+@inproceedings{margatina-etal-2021-active,
+    title = "Active Learning by Acquiring Contrastive Examples",
+    author = "Margatina, Katerina  and Vernikos, Giorgos  and Barrault, Lo\"{i}c and Aletras, Nikolaos",
+    booktitle = "Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing (EMNLP)",
+    }
+``` -->
+
 ---
 ## Contact
-Please feel free to contact me in case you require any help setting up the repo!:blush:
+Please feel free to raise an issue or contact me in case you require any help setting up the repo!:blush:
