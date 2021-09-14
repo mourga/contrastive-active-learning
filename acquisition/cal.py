@@ -36,16 +36,48 @@ def contrastive_acquisition(args, annotations_per_iteration, X_original, y_origi
                             model=None,
                             tfidf_dtrain_reprs=None, tfidf_dpool_reprs=None):
     """
+
+    :param args: arguments (such as flags, device, etc)
+    :param annotations_per_iteration: acquisition size
+    :param X_original: list of all data
+    :param y_original: list of all labels
+    :param labeled_inds: indices of current labeled/training examples
+    :param candidate_inds: indices of current unlabeled examples (pool)
+    :param discarded_inds: indices of examples that should not be considered for acquisition/annotation
+    :param original_inds: indices of all data (this is a list of indices of the X_original list)
+    :param tokenizer: tokenizer
+    :param train_results: dictionary with results from training/validation phase (for logits) of training set
+    :param results_dpool: dictionary with results from training/validation phase (for logits) of unlabeled set (pool)
+    :param logits_dpool: logits for all examples in the pool
+    :param bert_representations: representations of pretrained bert (ablation)
+    :param train_dataset: the training set in the tensor format
+    :param model: the fine-tuned model of the iteration
+    :param tfidf_dtrain_reprs: tf-idf representations of training set (ablation)
+    :param tfidf_dpool_reprs: tf-idf representations of unlabeled set (ablation)
+    :return:
+    """
+    """
+    CAL (Contrastive Active Learning)
     Acquire data by choosing those with the largest KL divergence in the predictions between a candidate dpool input
      and its nearest neighbours in the training set.
+     Our proposed approach includes:
+     args.cls = True
+     args.operator = "mean"
+     the rest are False. We use them (True) in some experiments for ablation/analysis
+     args.mean_emb = False
+     args.mean_out = False
+     args.bert_score = False 
+     args.tfidf = False 
+     args.reverse = False
+     args.knn_lab = False
+     args.ce = False
     :return:
     """
     processor = processors[args.task_name]()
     if model is None and train_results is not None:
         model = train_results['model']
 
-    if args.bert_score:
-        # BERT score representations (ablation)
+    if args.bert_score:  # BERT score representations (ablation)
         train_dataset = get_glue_tensor_dataset(labeled_inds, args, args.task_name, tokenizer, train=True)
         _train_results, train_logits = my_evaluate(train_dataset, args, model, prefix="",
                                                    al_test=False, mc_samples=None,
@@ -101,8 +133,7 @@ def contrastive_acquisition(args, annotations_per_iteration, X_original, y_origi
         else:
             selected_inds = np.argpartition(kl_scores, -annotations_per_iteration)[-annotations_per_iteration:]
 
-    elif args.tfidf and args.cls:
-        # Half neighbourhood with tfidf - half with cls embs (ablation)
+    elif args.tfidf and args.cls:  # Half neighbourhood with tfidf - half with cls embs (ablation)
         if train_dataset is None:
             train_dataset = get_glue_tensor_dataset(labeled_inds, args, args.task_name, tokenizer, train=True)
         _train_results, train_logits = my_evaluate(train_dataset, args, model, prefix="",
@@ -226,7 +257,7 @@ def contrastive_acquisition(args, annotations_per_iteration, X_original, y_origi
             else:
                 selected_inds = np.argpartition(kl_scores, -annotations_per_iteration)[-annotations_per_iteration:]
 
-    else:
+    else:  # standard method
         if train_dataset is None:
             train_dataset = get_glue_tensor_dataset(labeled_inds, args, args.task_name, tokenizer, train=True)
         _train_results, train_logits = my_evaluate(train_dataset, args, model, prefix="",
@@ -273,8 +304,10 @@ def contrastive_acquisition(args, annotations_per_iteration, X_original, y_origi
         distances = None
 
         num_adv = None
-        if not args.knn_lab:
-            # centroids: UNLABELED data points
+        if not args.knn_lab:  # centroids: UNLABELED data points (ablation)
+            #############################################################################################################################
+            # Contrastive Active Learning (CAL)
+            #############################################################################################################################
             neigh = KNeighborsClassifier(n_neighbors=args.num_nei)
             neigh.fit(X=train_bert_emb, y=np.array(y_original)[labeled_inds])
             # criterion = nn.KLDivLoss(reduction='none') if not args.ce else nn.BCEWithLogitsLoss()
@@ -327,13 +360,13 @@ def contrastive_acquisition(args, annotations_per_iteration, X_original, y_origi
             logger.info('Total Different predictions for similar inputs: {}'.format(num_adv))
 
             # select argmax
-            if args.reverse:
+            if args.reverse:  # if True select opposite (ablation)
                 selected_inds = np.argpartition(kl_scores, annotations_per_iteration)[:annotations_per_iteration]
             else:
                 selected_inds = np.argpartition(kl_scores, -annotations_per_iteration)[-annotations_per_iteration:]
+            #############################################################################################################################
 
-        else:
-            # centroids: LABELED data points
+        else:  # centroids: LABELED data points (ablation)
             criterion = nn.KLDivLoss(reduction='sum') if not args.ce else nn.CrossEntropyLoss()
             # step 1: find neighbours for each *LABELED* data point
             N = dpool_bert_emb.shape[0]
@@ -400,10 +433,10 @@ def contrastive_acquisition(args, annotations_per_iteration, X_original, y_origi
     new_labels = np.asarray(y_original, dtype='object')[sampled_ind]
 
     # Mean and std of length of selected sequences
-    if args.task_name in ['sst-2', 'ag_news', 'dbpedia', 'trec-6', 'imdb', 'pubmed', 'sentiment']:
+    if args.task_name in ['sst-2', 'ag_news', 'dbpedia', 'trec-6', 'imdb', 'pubmed', 'sentiment']: # single sequence
         l = [len(x.split()) for x in new_samples]
     elif args.dataset_name in ['mrpc', 'mnli', 'qnli', 'cola', 'rte', 'qqp', 'nli']:
-        l = [len(sentence[0].split()) + len(sentence[1].split()) for sentence in new_samples]
+        l = [len(sentence[0].split()) + len(sentence[1].split()) for sentence in new_samples]  # pairs of sequences
     assert type(l) is list, "type l: {}, l: {}".format(type(l), l)
     length_mean = np.mean(l)
     length_std = np.std(l)
@@ -424,19 +457,14 @@ def contrastive_acquisition(args, annotations_per_iteration, X_original, y_origi
     assert len(new_samples) == annotations_per_iteration, 'len(new_samples)={}, annotatations_per_it={}'.format(
         len(new_samples),
         annotations_per_iteration)
-    if args.indicator is not None and args.indicator != "small_config":
-        pass
-    else:
-        # assert len(labeled_inds) + len(candidate_inds) + len(discarded_inds) == len(X_original), "labeled {}, " \
-        assert len(labeled_inds) + len(candidate_inds) + len(discarded_inds) == len(original_inds), "labeled {}, " \
-                                                                                                    "candidate {}, " \
-                                                                                                    "disgarded {}, " \
-                                                                                                    "original {}".format(
-            len(labeled_inds),
-            len(candidate_inds),
-            len(discarded_inds),
-            # len(X_original))
-            len(original_inds))
+    assert len(labeled_inds) + len(candidate_inds) + len(discarded_inds) == len(original_inds), "labeled {}, " \
+                                                                                                "candidate {}, " \
+                                                                                                "disgarded {}, " \
+                                                                                                "original {}".format(
+        len(labeled_inds),
+        len(candidate_inds),
+        len(discarded_inds),
+        len(original_inds))
 
     stats = {'length': {'mean': float(length_mean),
                         'std': float(length_std),
@@ -445,12 +473,7 @@ def contrastive_acquisition(args, annotations_per_iteration, X_original, y_origi
              'class_selected_samples': stats_list,
              'class_samples_after': stats_list_all,
              'class_samples_before': stats_list_previous,
-             # 'num_adv': int(num_adv),
-             # 'num_adv_per': float(num_adv_per)
              }
-    if num_adv is not None:
-        stats['num_adv'] = int(num_adv)
-        stats['num_adv_per'] = int(num_adv_per)
     if distances is not None:
         if type(distances) is list:
             stats['distances'] = distances
