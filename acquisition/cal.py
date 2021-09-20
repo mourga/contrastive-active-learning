@@ -125,9 +125,6 @@ def contrastive_acquisition(args, annotations_per_iteration, X_original, y_origi
 
         distances = np.array([np.array(xi) for xi in distances])
 
-        # # select argmax
-        # selected_inds = np.argpartition(kl_scores, -annotations_per_iteration)[-annotations_per_iteration:]
-        # select argmax
         if args.reverse:
             selected_inds = np.argpartition(kl_scores, annotations_per_iteration)[:annotations_per_iteration]
         else:
@@ -237,11 +234,7 @@ def contrastive_acquisition(args, annotations_per_iteration, X_original, y_origi
                     kl = np.array(
                         [torch.sum(criterion(candidate_log_prob, n), dim=-1).numpy() for n in neigh_prob_tfidf]
                         + [torch.sum(criterion(candidate_log_prob, n), dim=-1).numpy() for n in neigh_prob_cls])
-                # confidence masking
-                # if args.conf_mask:
-                #     conf_mask = torch.max(neigh_prob, dim=-1)[0] > args.conf_thresh
-                #     conf_mask = conf_mask.type(torch.float32)
-                #     kl = kl * conf_mask.numpy()
+
                 if args.operator == "mean":
                     kl_scores.append(kl.mean())
                 elif args.operator == "max":
@@ -249,9 +242,6 @@ def contrastive_acquisition(args, annotations_per_iteration, X_original, y_origi
                 elif args.operator == "median":
                     kl_scores.append(np.median(kl))
 
-            # # select argmax
-            # selected_inds = np.argpartition(kl_scores, -annotations_per_iteration)[-annotations_per_iteration:]
-            # select argmax
             if args.reverse:
                 selected_inds = np.argpartition(kl_scores, annotations_per_iteration)[:annotations_per_iteration]
             else:
@@ -304,10 +294,10 @@ def contrastive_acquisition(args, annotations_per_iteration, X_original, y_origi
         distances = None
 
         num_adv = None
-        if not args.knn_lab:  # centroids: UNLABELED data points (ablation)
-            #############################################################################################################################
+        if not args.knn_lab:  # centroids: UNLABELED data points
+            #####################################################
             # Contrastive Active Learning (CAL)
-            #############################################################################################################################
+            #####################################################
             neigh = KNeighborsClassifier(n_neighbors=args.num_nei)
             neigh.fit(X=train_bert_emb, y=np.array(y_original)[labeled_inds])
             # criterion = nn.KLDivLoss(reduction='none') if not args.ce else nn.BCEWithLogitsLoss()
