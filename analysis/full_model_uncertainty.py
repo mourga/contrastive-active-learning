@@ -1,10 +1,10 @@
 """
 Code from https://github.com/forest-snow/alps
 """
+import json
+import logging
 import os
 import random
-import logging
-
 import sys
 
 import numpy as np
@@ -20,18 +20,34 @@ sys.path.append("../../")
 sys.path.append("../")
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
-from analysis.selected_data import load_json
+from sys_config import CACHE_DIR, DATA_DIR, CKPT_DIR, EXP_DIR, ANALYSIS_DIR
+from utilities.preprocessors import processors, output_modes
 from utilities.general import create_dir
-from utilities.general_preprocessors import processors, output_modes
 from models.deep.main_transformer import get_glue_dataset, get_glue_tensor_dataset, train_transformer
-
-from sys_config import CACHE_DIR, glue_datasets, GLUE_DIR, DATA_DIR, CKPT_DIR, BERT_DIR, FIG_DIR, ANALYSIS_DIR
 
 logger = logging.getLogger(__name__)
 
 """
 Computes diversity (in raw text) and uncertainty as in https://arxiv.org/pdf/2010.09535.pdf
 """
+
+
+def load_json(filename):
+    file = None
+    if os.path.isfile(filename):
+        with open(filename) as json_file:
+            if 'jsonl' in filename:
+                json_list = list(json_file)
+                file_list = []
+                for json_str in json_list:
+                    file_list.append(json.loads(json_str))
+                    # print(f"result: {result}")
+                    # print(isinstance(result, dict))
+                file = file_list
+            else:
+                file = json.load(json_file)
+    return file
+
 
 def compute_entropy(sampled_dataset, model, args):
     """Compute average entropy in label distribution for examples in [sampled]."""
@@ -75,6 +91,7 @@ def jaccard(a, b):
     return ji
 
 
+# I don't use the following functions
 def compute_diversity(sampled, data, train_args):
     # compare jaccard similarity between sampled and unsampled points
     data_sampled = Subset(data, sampled)
@@ -255,48 +272,23 @@ if __name__ == '__main__':
     if args.task_name is None: args.task_name = args.dataset_name.upper()
 
     args.cache_dir = CACHE_DIR
+    args.data_dir = os.path.join(DATA_DIR, args.task_name)
 
-    if args.dataset_name in glue_datasets:
-        args.data_dir = os.path.join(GLUE_DIR, args.task_name)
-    else:
-        args.data_dir = os.path.join(DATA_DIR, args.task_name)
     args.overwrite_cache = bool(True)
     args.evaluate_during_training = True
 
-    if args.tapt is not None:
-        # orig_ft_model = args.model_name_or_path
-        tapt_ckpt_path = os.path.join(CKPT_DIR, '{}_ft'.format(args.dataset_name), args.tapt)
-        # args.model_name_or_path = tapt_ckpt_path
     # Output dir
-    model_type = args.model_type if args.model_type != 'allenai/scibert' else 'bert'
-    output_dir = os.path.join(BERT_DIR, '{}_{}'.format(args.dataset_name, args.model_type))
-    # if args.model_type == 'bert':
-    #     ckpt_dir = BERT_DIR
-    # elif args.model_type == 'distilbert':
-    #     ckpt_dir = BERT_DIR = os.path.join(CKPT_DIR, 'distilbert')
-    # elif args.model_type == 'roberta':
-    #     ckpt_dir = BERT_DIR = os.path.join(CKPT_DIR, 'roberta')
-    # else:
-    #     ckpt_dir = BERT_DIR
-    # # args.output_dir = os.path.join(BERT_DIR, '{}_{}'.format(args.dataset_name, args.model_type))
-    # args.output_dir = os.path.join(ckpt_dir, '{}_{}'.format(args.dataset_name, args.model_type))
-    # if args.model_type == 'allenai/scibert': args.output_dir = os.path.join(ckpt_dir,
-    #                                                                         '{}_{}'.format(args.dataset_name, 'bert'))
+    ckpt_dir = os.path.join(CKPT_DIR,
+                            '{}_{}_{}_{}'.format(args.dataset_name, args.model_type, args.acquisition, args.seed))
+    output_dir = os.path.join(ckpt_dir, '{}_{}'.format(args.dataset_name, args.model_type))
+    if args.model_type == 'allenai/scibert':
+        args.output_dir = os.path.join(ckpt_dir, '{}_{}'.format(args.dataset_name, 'bert'),
+                                       '{}_{}'.format(args.dataset_name, 'bert'))
     args.output_dir = os.path.join(output_dir, 'all_{}'.format(args.seed))
 
     if args.indicator is not None: args.output_dir += '-{}'.format(args.indicator)
-    if args.patience is not None: args.output_dir += '-early{}'.format(int(args.num_train_epochs))
-    if args.tapt is not None: args.output_dir += '-{}'.format(args.tapt)
-    if args.da is not None:
-        if args.da_all:
-            args.output_dir += '-{}-{}-{}-{}'.format(args.da, args.num_per_augm, 'all', args.da_set)
-        else:
-            args.output_dir += '-{}-{}-{}-{}'.format(args.da, args.num_per_augm, args.num_augm, args.da_set)
-    if args.uda: args.output_dir += '-uda'
     args.current_output_dir = args.output_dir
     create_dir(args.output_dir)
-
-    if args.uda: args.da_model = "cons"
 
     if (
             os.path.exists(args.output_dir)
@@ -355,9 +347,8 @@ if __name__ == '__main__':
     #########################################
     # Check if experiment already done
     #########################################
-    path = os.path.join(FIG_DIR, '{}_{}_100%'.format(args.task_name,
-                                                     # args.model_type
-                                                     model_type
+    path = os.path.join(EXP_DIR, '{}_{}_100%'.format(args.task_name,
+                                                     args.model_type
                                                      ))
     create_dir(path)
 
@@ -453,15 +444,12 @@ if __name__ == '__main__':
         model = AutoModelForSequenceClassification.from_pretrained(args.output_dir)
         model.to(args.device)
     else:
-        if args.tapt is not None:
-            model = AutoModelForSequenceClassification.from_pretrained(tapt_ckpt_path, config=config)
-        else:
-            model = AutoModelForSequenceClassification.from_pretrained(
-                args.model_name_or_path,
-                from_tf=bool(".ckpt" in args.model_name_or_path),
-                config=config,
-                cache_dir=args.cache_dir,
-            )
+        model = AutoModelForSequenceClassification.from_pretrained(
+            args.model_name_or_path,
+            from_tf=bool(".ckpt" in args.model_name_or_path),
+            config=config,
+            cache_dir=args.cache_dir,
+        )
 
         if args.local_rank == 0:
             torch.distributed.barrier()  # Make sure only the first process in distributed training will download model & vocab
@@ -478,7 +466,7 @@ if __name__ == '__main__':
     #######################################
     sel_data_df = pd.DataFrame(columns=['dataset', 'acquisition', 'diversity_score', 'uncertainty_score'])
     datasets = [args.dataset_name]
-    acq_funs = ['random', 'FTbertKM', 'entropy', 'alps', 'badge', 'adv_train']
+    acq_funs = ['random', 'FTbertKM', 'entropy', 'alps', 'badge', 'contrastive']
     # acq_funs = ['badge','adv_train']
     seeds = [964, 131, 821, 71, 12]
     # seeds=[964,131,]
@@ -499,7 +487,7 @@ if __name__ == '__main__':
                 else:
                     _i = indicator
 
-                filepath = os.path.join(FIG_DIR, '{}_{}_{}'.format(dataset, model_name, acq_fun),
+                filepath = os.path.join(EXP_DIR, '{}_{}_{}'.format(dataset, model_name, acq_fun),
                                         'prob_{}_{}'.format(seed, _i))
                 if os.path.exists(filepath):
                     results_filename = os.path.join(filepath, 'results_of_iteration.json')
@@ -542,5 +530,3 @@ if __name__ == '__main__':
             sel_data_df.to_csv(os.path.join(ANALYSIS_DIR, '{}_unc_div_stats.csv'.format(args.dataset_name)),
                                index=False)
     print()
-
-
