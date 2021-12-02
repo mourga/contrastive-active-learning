@@ -490,14 +490,14 @@ def al_loop(args):
         # X_train_current_inds and X_train_remaining_inds are lists of indices of the original dataset
         # sampled_inds is a list of indices OF THE X_train_remaining_inds(!!!!) LIST THAT SHOULD BE REMOVED
         # INCEPTION %&#!@***CAUTION***%&#!@
-        if args.acquisition in ['alps', 'badge', 'adv', 'FTbertKM', 'adv_train']:
+        if args.acquisition in ['alps', 'badge', 'adv', 'FTbertKM', 'adv_train',"cal", "contrastive"]:
             X_train_current_inds += list(sampled_ind)
         else:
             X_train_current_inds += list(np.array(X_train_remaining_inds)[sampled_ind])
 
         assert len(ids_per_it[str(0)]) == args.init_train_data
 
-        if args.acquisition in ['alps', 'badge', 'adv', 'FTbertKM', 'adv_train']:
+        if args.acquisition in ['alps', 'badge', 'adv', 'FTbertKM', 'adv_train',"cal", "contrastive"]:
             selected_dataset_ids = sampled_ind
             selected_dataset_ids = list(map(int, selected_dataset_ids))  # for json
             assert len(ids_per_it[str(0)]) == args.init_train_data
@@ -511,7 +511,7 @@ def al_loop(args):
         assert len(ids_per_it[str(0)]) == args.init_train_data
         assert len(ids_per_it[str(current_iteration)]) == annotations_per_iteration
 
-        if args.acquisition in ['alps', 'badge', 'adv', 'FTbertKM', 'adv_train']:
+        if args.acquisition in ['alps', 'badge', 'adv', 'FTbertKM', 'adv_train',"cal", "contrastive"]:
             X_train_remaining_inds = [x for x in X_train_original_inds if x not in X_train_current_inds
                                       and x not in X_discarded_inds]
         else:
@@ -661,10 +661,7 @@ if __name__ == '__main__':
     ##########################################################################
     parser.add_argument("--dataset_name", default=None, required=True, type=str,
                         help="Dataset [mrpc, ag_news, qnli, sst-2]")
-    # parser.add_argument("--task_name", default=None, type=str, help="Task [MRPC, AG_NEWS, QNLI, SST-2]")
     parser.add_argument("--max_seq_length", default=256, type=int, help="Max sequence length")
-    # parser.add_argument("--counterfactual", default=None, type=str, help="type of counterfactual data: [orig, new, combined]")
-    # parser.add_argument("--ood_name", default=None, type=str, help="name of ood dataset for counterfactual data: [amazon, yelp, semeval]")
     ##########################################################################
     # AL args
     ##########################################################################
@@ -677,33 +674,10 @@ if __name__ == '__main__':
                         help="budget \in [1,100] percent. if > 100 then it represents the total annotations")
     parser.add_argument("-mc_samples", "--mc_samples", required=False, default=None, type=int,
                         help="number of MC forward passes in calculating uncertainty estimates")
-    # parser.add_argument("-variant", "--variant", required=False, default="prob", type=str,
-    #                     help="prob for probabilistic, det for deterministic")
-    # parser.add_argument("-sim", "--simulation", required=False,
-    #                     default=False, type=bool,
-    #                     help="percentage of initial training data")
-    # parser.add_argument("--adaptation", required=False,
-    #                     default=False, type=bool,
-    #                     help="if True use ckpt from previous al iteration")
-    # parser.add_argument("--adaptation_best", required=False,
-    #                     default=False, type=bool,
-    #                     help="if True use ckpt from previous al iteration")
     parser.add_argument("--resume", required=False,
                         default=False,
                         type=bool,
                         help="if True resume experiment")
-    # parser.add_argument("--oversampling", required=False,
-    #                     default=False,
-    #                     type=bool,
-    #                     help="if oversampling")
-    # parser.add_argument("--adapt_new", required=False,
-    #                     default=False,
-    #                     type=bool,
-    #                     help="if True load previous optimizer")
-    # parser.add_argument("--adapters", required=False,
-    #                     default=False,
-    #                     type=bool,
-    #                     help="if True load previous optimizer")
     parser.add_argument("--acquisition_size", required=False,
                         default=None,
                         type=int,
