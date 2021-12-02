@@ -2,7 +2,7 @@
 
 <!-- ## ⚠️WORK IN PROGRESS⚠️ -->
 
-> [**Active Learning by Acquiring Contrastive Examples**](https://arxiv.org/abs/2109.03764)  
+> [**Active Learning by Acquiring Contrastive Examples**](https://aclanthology.org/2021.emnlp-main.51/)  
 > Katerina Margatina, Giorgos Vernikos, Loic Barrault, Nikolaos Aletras  
 > Empirical Methods in Natural Language Processing (EMNLP) 2021.
 
@@ -84,16 +84,27 @@ python run_al.py --dataset_name sst-2 --acquisition contrastive
 
 We would like to thank the community for releasing their code! This repository contains code from [HuggingFace](https://github.com/huggingface/transformers),  [ALPS](https://github.com/forest-snow/alps), and [BatchBALD](https://github.com/BlackHC/BatchBALD) repositories.
 
-<!-- 
+
 ---
 ## Reference
+Please feel free to cite our paper if you use our code or proposed algorithm.:blush:
 ```
 @inproceedings{margatina-etal-2021-active,
     title = "Active Learning by Acquiring Contrastive Examples",
-    author = "Margatina, Katerina  and Vernikos, Giorgos  and Barrault, Lo\"{i}c and Aletras, Nikolaos",
-    booktitle = "Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing (EMNLP)",
-    }
-``` -->
+    author = {Margatina, Katerina  and
+      Vernikos, Giorgos  and
+      Barrault, Lo{\"\i}c  and
+      Aletras, Nikolaos},
+    booktitle = "Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing",
+    month = nov,
+    year = "2021",
+    address = "Online and Punta Cana, Dominican Republic",
+    publisher = "Association for Computational Linguistics",
+    url = "https://aclanthology.org/2021.emnlp-main.51",
+    pages = "650--663",
+    abstract = "Common acquisition functions for active learning use either uncertainty or diversity sampling, aiming to select difficult and diverse data points from the pool of unlabeled data, respectively. In this work, leveraging the best of both worlds, we propose an acquisition function that opts for selecting contrastive examples, i.e. data points that are similar in the model feature space and yet the model outputs maximally different predictive likelihoods. We compare our approach, CAL (Contrastive Active Learning), with a diverse set of acquisition functions in four natural language understanding tasks and seven datasets. Our experiments show that CAL performs consistently better or equal than the best performing baseline across all tasks, on both in-domain and out-of-domain data. We also conduct an extensive ablation study of our method and we further analyze all actively acquired datasets showing that CAL achieves a better trade-off between uncertainty and diversity compared to other strategies.",
+}
+```
 
 ---
 ## Contact
