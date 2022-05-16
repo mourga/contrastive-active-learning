@@ -88,7 +88,6 @@ def al_loop(args):
 
     args.acquisition_size = round(len(X_train_original_inds) * 2 / 100)  # 2%
     args.init_train_data = round(len(X_train_original_inds) * 1 / 100)  # 1%
-    args.budget = round(len(X_train_original_inds) * 17 / 100)  # 25%
 
     tokenizer = AutoTokenizer.from_pretrained(
         args.tokenizer_name if args.tokenizer_name else args.model_name_or_path,
