@@ -76,7 +76,7 @@ The main script to run any AL experiment is `run_al.py`.
 
 Example:
 ```
-python run_al.py --dataset_name sst-2 --acquisition contrastive
+python run_al.py --dataset_name sst-2 --acquisition cal
 ```
 ---
 
