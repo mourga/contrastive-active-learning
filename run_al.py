@@ -226,9 +226,10 @@ def al_loop(args):
         annotations_per_iteration = results_per_iteration['annotations_per_iteration']
 
 
-        total_annotations, is_percentage = args.budget
+        args.budget, is_percentage = args.budget
         if is_percentage:
-            total_annotations = round(args.budget * len(X_train_original_inds) / 100)
+            args.budget = round(args.budget * len(X_train_original_inds) / 100)
+        total_annotations = args.budget
 
         assert current_annotations <= total_annotations, "Experiment done already!"
         total_iterations = round(total_annotations / annotations_per_iteration)
