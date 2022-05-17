@@ -110,7 +110,7 @@ def al_loop(args):
     print_stats(np.array(y_test)[X_test_inds], 'test')
 
     print(f"\nDataset for annotation: {args.dataset_name}\nAcquisition function: {args.acquisition}"
-          f"\nBudget: {args.budget} labels\n")
+          f"\nBudget: {args.budget[0]}{'% of training set' if args.budget[1] else ' labels'} \n")
 
     init_train_data = args.init_train_data
     init_train_percent = init_train_data / len(list(np.array(X_train_original)[X_train_original_inds])) * 100
@@ -225,11 +225,9 @@ def al_loop(args):
         current_annotations = results_per_iteration['current_annotations']
         annotations_per_iteration = results_per_iteration['annotations_per_iteration']
 
-
-        args.budget, is_percentage = args.budget
+        total_annotations, is_percentage = args.budget
         if is_percentage:
-            args.budget = round(args.budget * len(X_train_original_inds) / 100)
-        total_annotations = args.budget
+            total_annotations = round(total_annotations * len(X_train_original_inds) / 100)
 
         assert current_annotations <= total_annotations, "Experiment done already!"
         total_iterations = round(total_annotations / annotations_per_iteration)
@@ -256,7 +254,7 @@ def al_loop(args):
 
         print(f"current iteration {current_iteration}")
         print(f"annotations_per_iteration {annotations_per_iteration}")
-        print(f"budget {args.budget}")
+        print(f"budget {args.budget[0]}{'% of training data' if args.budget[1] else ' labels'}")
     else:
         ##############################################################
         # New experiment!
@@ -318,11 +316,15 @@ def al_loop(args):
         # Annotations & budget
         ####################################################################
         current_annotations = len(X_train_init)  # without validation data
-        if X_train_original_after_sampling == []:
-            total_annotations = round(args.budget * len(np.array(X_train_original)[X_train_original_inds]) / 100)
-        else:
-            total_annotations = round(args.budget * len(X_train_original_after_sampling) / 100)
-        if args.budget > 100: total_annotations = args.budget
+
+        total_annotations, is_percentage = args.budget
+        if is_percentage:
+            if X_train_original_after_sampling == []:
+                total_annotations = round(
+                    total_annotations * len(np.array(X_train_original)[X_train_original_inds]) / 100)
+            else:
+                total_annotations = round(total_annotations * len(X_train_original_after_sampling) / 100)
+
         annotations_per_iteration = args.acquisition_size
         total_iterations = math.ceil(total_annotations / annotations_per_iteration)
 
@@ -494,14 +496,14 @@ def al_loop(args):
         # X_train_current_inds and X_train_remaining_inds are lists of indices of the original dataset
         # sampled_inds is a list of indices OF THE X_train_remaining_inds(!!!!) LIST THAT SHOULD BE REMOVED
         # INCEPTION %&#!@***CAUTION***%&#!@
-        if args.acquisition in ['alps', 'badge', 'adv', 'FTbertKM', 'adv_train',"cal", "contrastive"]:
+        if args.acquisition in ['alps', 'badge', 'adv', 'FTbertKM', 'adv_train', "cal", "contrastive"]:
             X_train_current_inds += list(sampled_ind)
         else:
             X_train_current_inds += list(np.array(X_train_remaining_inds)[sampled_ind])
 
         assert len(ids_per_it[str(0)]) == args.init_train_data
 
-        if args.acquisition in ['alps', 'badge', 'adv', 'FTbertKM', 'adv_train',"cal", "contrastive"]:
+        if args.acquisition in ['alps', 'badge', 'adv', 'FTbertKM', 'adv_train', "cal", "contrastive"]:
             selected_dataset_ids = sampled_ind
             selected_dataset_ids = list(map(int, selected_dataset_ids))  # for json
             assert len(ids_per_it[str(0)]) == args.init_train_data
@@ -515,7 +517,7 @@ def al_loop(args):
         assert len(ids_per_it[str(0)]) == args.init_train_data
         assert len(ids_per_it[str(current_iteration)]) == annotations_per_iteration
 
-        if args.acquisition in ['alps', 'badge', 'adv', 'FTbertKM', 'adv_train',"cal", "contrastive"]:
+        if args.acquisition in ['alps', 'badge', 'adv', 'FTbertKM', 'adv_train', "cal", "contrastive"]:
             X_train_remaining_inds = [x for x in X_train_original_inds if x not in X_train_current_inds
                                       and x not in X_discarded_inds]
         else:
@@ -543,7 +545,8 @@ def al_loop(args):
         print("*" * 12)
         print(f"End of iteration {current_iteration}:")
         if 'loss' in test_results.keys():
-            print(f"Train loss {train_results['train_loss']}, Val loss {train_results['loss']}, Test loss {test_results['loss']}")
+            print(
+                f"Train loss {train_results['train_loss']}, Val loss {train_results['loss']}, Test loss {test_results['loss']}")
         print(f"Annotated {annotations_per_iteration} samples")
         print(f"Current labeled (training) data: {len(X_train_current_inds)} samples")
         print(f"Remaining budget: {total_annotations - current_annotations} (in samples)")
@@ -574,6 +577,7 @@ class Percentable(object):
     """
     Represents a number that can either be a normal float or a percentage
     Takes X or X% and returns a tuple with (X, bool is_percentage)"""
+
     def __new__(self, percentable_string):
         is_percentage = False
 
@@ -775,7 +779,7 @@ if __name__ == '__main__':
                             f'{args.dataset_name}_{args.model_type}_{args.acquisition}_{args.seed}')
     args.output_dir = os.path.join(ckpt_dir, f'{args.dataset_name}_{args.model_type}')
     if args.model_type == 'allenai/scibert': args.output_dir = os.path.join(ckpt_dir,
-                                                                            f'{args.dataset_name}_{"bert"}') # TODO verify that 'bert' is correct here
+                                                                            f'{args.dataset_name}_{"bert"}')  # TODO verify that 'bert' is correct here
 
     if args.indicator is not None: args.output_dir += f'-{args.indicator}'
     # The following arguments are experiments in the ablation/analysis section of the paper
