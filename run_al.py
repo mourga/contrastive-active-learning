@@ -86,8 +86,14 @@ def al_loop(args):
     args.binary = True if len(set(np.array(y_train_original)[X_train_original_inds])) == 2 else False
     args.num_classes = len(set(np.array(y_train_original)[X_train_original_inds]))
 
-    args.acquisition_size = round(len(X_train_original_inds) * 2 / 100)  # 2%
-    args.init_train_data = round(len(X_train_original_inds) * 1 / 100)  # 1%
+    # set acquisition_size and init_train_data to their correct values based on if they were meant as a percentage
+    args.acquisition_size, is_percentage = args.acquisition_size
+    if is_percentage:
+        args.acquisition_size = round(len(X_train_original_inds) * args.acquisition_size / 100)
+
+    args.init_train_data, is_percentage = args.init_train_data
+    if is_percentage:
+        args.init_train_data = round(len(X_train_original_inds) * args.init_train_data / 100)
 
     tokenizer = AutoTokenizer.from_pretrained(
         args.tokenizer_name if args.tokenizer_name else args.model_name_or_path,
@@ -559,6 +565,25 @@ def al_loop(args):
     return
 
 
+class Percentable(object):
+    """
+    Represents a number that can either be a normal float or a percentage
+    Takes X or X% and returns a tuple with (X, bool is_percentage)"""
+    def __new__(self, percentable_string):
+        is_percentage = False
+
+        if percentable_string.endswith('%'):
+            is_percentage = True
+            percentable_string = percentable_string[:-1]
+
+        try:
+            percentable_string = float(percentable_string)
+        except ValueError:
+            print(f"{percentable_string} is not a valid float.")
+
+        return percentable_string, is_percentage
+
+
 if __name__ == '__main__':
     import argparse
     import random
@@ -673,13 +698,13 @@ if __name__ == '__main__':
                         type=bool,
                         help="if True resume experiment")
     parser.add_argument("--acquisition_size", required=False,
-                        default=None,
-                        type=int,
-                        help="acquisition size at each AL iteration; if None we sample 2%%")
+                        default="2%",
+                        type=Percentable,
+                        help="acquisition size at each AL iteration (as absolute 'X' or percentage of train 'X%%'); if None we sample 2%%")
     parser.add_argument("--init_train_data", required=False,
-                        default=None,
-                        type=int,
-                        help="initial training data for AL; if None we sample 1%%")
+                        default="1%",
+                        type=Percentable,
+                        help="initial training data for AL (as absolute 'X' or percentage of train 'X%%'); if None we sample 1%%")
     parser.add_argument("--indicator", required=False,
                         default=None,
                         type=str,
