@@ -224,8 +224,12 @@ def al_loop(args):
 
         current_annotations = results_per_iteration['current_annotations']
         annotations_per_iteration = results_per_iteration['annotations_per_iteration']
-        total_annotations = round(args.budget * len(X_train_original) / 100)
-        if args.budget > 100: total_annotations = args.budget
+
+
+        total_annotations, is_percentage = args.budget
+        if is_percentage:
+            total_annotations = round(args.budget * len(X_train_original) / 100)
+
         assert current_annotations <= total_annotations, "Experiment done already!"
         total_iterations = round(total_annotations / annotations_per_iteration)
 
@@ -687,8 +691,8 @@ if __name__ == '__main__':
                         choices=acquisition_functions,
                         help="Choose an acquisition function to be used for AL.")
     parser.add_argument("-budget", "--budget", required=False,
-                        default=50, type=int,
-                        help="budget \in [1,100] percent. if > 100 then it represents the total annotations")
+                        default="15%", type=Percentable,
+                        help="budget as 'X%%' percent of training data, or 'X' without %% for total annotations; 15%% by default")
     parser.add_argument("-cap_training_pool", "--cap_training_pool", required=False, default=None, type=int,
                         help="limits the number of samples in the training pool to the first X entries")
     parser.add_argument("-mc_samples", "--mc_samples", required=False, default=None, type=int,
