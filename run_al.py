@@ -110,7 +110,7 @@ def al_loop(args):
     print_stats(np.array(y_test)[X_test_inds], 'test')
 
     print(f"\nDataset for annotation: {args.dataset_name}\nAcquisition function: {args.acquisition}"
-          f"\nBudget: {args.budget}% of labeled data\n")
+          f"\nBudget: {args.budget} labels\n")
 
     init_train_data = args.init_train_data
     init_train_percent = init_train_data / len(list(np.array(X_train_original)[X_train_original_inds])) * 100
