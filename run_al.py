@@ -63,7 +63,7 @@ def al_loop(args):
         X_test_ood, y_test_ood = get_glue_dataset(args, os.path.join(DATA_DIR, 'TwitterPPDB'), 'twitterppdb',
                                                   args.model_type, test=True)
 
-    X_train_original_inds = list(np.arange(len(X_train_original)))[:2500]  # original pool
+    X_train_original_inds = list(np.arange(len(X_train_original)))[:args.cap_training_pool]  # original pool
     X_val_inds = list(np.arange(len(X_val)))
     X_test_inds = list(np.arange(len(X_test)))
 
@@ -665,6 +665,8 @@ if __name__ == '__main__':
     parser.add_argument("-budget", "--budget", required=False,
                         default=50, type=int,
                         help="budget \in [1,100] percent. if > 100 then it represents the total annotations")
+    parser.add_argument("-cap_training_pool", "--cap_training_pool", required=False, default=None, type=int,
+                        help="limits the number of samples in the training pool to the first X entries")
     parser.add_argument("-mc_samples", "--mc_samples", required=False, default=None, type=int,
                         help="number of MC forward passes in calculating uncertainty estimates")
     parser.add_argument("--resume", required=False,
