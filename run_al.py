@@ -674,7 +674,7 @@ if __name__ == '__main__':
     parser.add_argument("--acquisition_size", required=False,
                         default=None,
                         type=int,
-                        help="acquisition size at each AL iteration; if None we sample 1%%")
+                        help="acquisition size at each AL iteration; if None we sample 2%%")
     parser.add_argument("--init_train_data", required=False,
                         default=None,
                         type=int,
