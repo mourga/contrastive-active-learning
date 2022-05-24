@@ -63,7 +63,7 @@ def al_loop(args):
         X_test_ood, y_test_ood = get_glue_dataset(args, os.path.join(DATA_DIR, 'TwitterPPDB'), 'twitterppdb',
                                                   args.model_type, test=True)
 
-    X_train_original_inds = list(np.arange(len(X_train_original)))[:2500]  # original pool
+    X_train_original_inds = list(np.arange(len(X_train_original)))[:args.cap_training_pool]  # original pool
     X_val_inds = list(np.arange(len(X_val)))
     X_test_inds = list(np.arange(len(X_test)))
 
@@ -86,9 +86,14 @@ def al_loop(args):
     args.binary = True if len(set(np.array(y_train_original)[X_train_original_inds])) == 2 else False
     args.num_classes = len(set(np.array(y_train_original)[X_train_original_inds]))
 
-    args.acquisition_size = round(len(X_train_original_inds) * 2 / 100)  # 2%
-    args.init_train_data = round(len(X_train_original_inds) * 1 / 100)  # 1%
-    args.budget = round(len(X_train_original_inds) * 17 / 100)  # 25%
+    # set acquisition_size and init_train_data to their correct values based on if they were meant as a percentage
+    args.acquisition_size, is_percentage = args.acquisition_size
+    if is_percentage:
+        args.acquisition_size = round(len(X_train_original_inds) * args.acquisition_size / 100)
+
+    args.init_train_data, is_percentage = args.init_train_data
+    if is_percentage:
+        args.init_train_data = round(len(X_train_original_inds) * args.init_train_data / 100)
 
     tokenizer = AutoTokenizer.from_pretrained(
         args.tokenizer_name if args.tokenizer_name else args.model_name_or_path,
@@ -104,10 +109,8 @@ def al_loop(args):
     print_stats(np.array(y_val)[X_val_inds], 'validation')
     print_stats(np.array(y_test)[X_test_inds], 'test')
 
-    print("\nDataset for annotation: {}\nAcquisition function: {}\n"
-          "Budget: {}% of labeled data\n".format(args.dataset_name,
-                                                 args.acquisition,
-                                                 args.budget))
+    print(f"\nDataset for annotation: {args.dataset_name}\nAcquisition function: {args.acquisition}"
+          f"\nBudget: {args.budget[0]}{'% of training set' if args.budget[1] else ' labels'} \n")
 
     init_train_data = args.init_train_data
     init_train_percent = init_train_data / len(list(np.array(X_train_original)[X_train_original_inds])) * 100
@@ -213,34 +216,35 @@ def al_loop(args):
 
         X_train_remaining_inds = [i for i in X_train_original_inds if i not in X_train_current_inds]
         assert len(X_train_current_inds) + len(X_train_remaining_inds) == len(
-            X_train_original_inds), "current {}, remaining {}, " \
-                                    "original {}".format(len(X_train_current_inds), len(X_train_remaining_inds),
-                                                         len(X_train_original_inds))
+            X_train_original_inds), f"current {len(X_train_current_inds)}, remaining {len(X_train_remaining_inds)}, " \
+                                    f"original {len(X_train_original_inds)}"
 
-        print("Current labeled dataset {}".format(len(X_train_current_inds)))
-        print("Unlabeled dataset (Dpool) {}".format(len(X_train_remaining_inds)))
+        print(f"Current labeled dataset {len(X_train_current_inds)}")
+        print(f"Unlabeled dataset (Dpool) {len(X_train_remaining_inds)}")
 
         current_annotations = results_per_iteration['current_annotations']
         annotations_per_iteration = results_per_iteration['annotations_per_iteration']
-        total_annotations = round(args.budget * len(X_train_original) / 100)
-        if args.budget > 100: total_annotations = args.budget
+
+        total_annotations, is_percentage = args.budget
+        if is_percentage:
+            total_annotations = round(total_annotations * len(X_train_original_inds) / 100)
+
         assert current_annotations <= total_annotations, "Experiment done already!"
         total_iterations = round(total_annotations / annotations_per_iteration)
 
         if annotations_per_iteration != args.acquisition_size:
             annotations_per_iteration = args.acquisition_size
-            print("New budget! {} more iterations.....".format(
-                total_iterations - round(current_annotations / annotations_per_iteration)))
+            iterations_left = total_iterations - round(current_annotations / annotations_per_iteration)
+            print(f"New budget! {iterations_left} more iterations.....")
 
         X_discarded_inds = [x for x in X_train_original_inds if x not in X_train_remaining_inds
                             and x not in X_train_current_inds]
 
         assert len(X_train_current_inds) + len(X_train_remaining_inds) + len(X_discarded_inds) == \
-               len(X_train_original_inds), "current {}, remaining {}, discarded {}, original {}".format(
-            len(X_train_current_inds),
-            len(X_train_remaining_inds),
-            len(X_discarded_inds),
-            len(X_train_original_inds))
+               len(X_train_original_inds), f"current {len(X_train_current_inds)}, " \
+                                           f"remaining {len(X_train_remaining_inds)}, " \
+                                           f"discarded {len(X_discarded_inds)}, " \
+                                           f"original {len(X_train_original_inds)}"
         assert bool(not set(X_train_current_inds) & set(X_train_remaining_inds))
 
         it2per = {}  # iterations to data percentage
@@ -248,9 +252,9 @@ def al_loop(args):
         args.acc_best_iteration = 0
         args.acc_best = 0
 
-        print("current iteration {}".format(current_iteration))
-        print("annotations_per_iteration {}".format(annotations_per_iteration))
-        print("budget {}".format(args.budget))
+        print(f"current iteration {current_iteration}")
+        print(f"annotations_per_iteration {annotations_per_iteration}")
+        print(f"budget {args.budget[0]}{'% of training data' if args.budget[1] else ' labels'}")
     else:
         ##############################################################
         # New experiment!
@@ -297,13 +301,11 @@ def al_loop(args):
 
         for i in list(set(y_train_init)):
             init_train_dist_class = 100 * np.sum(np.array(y_train_init) == i) / len(y_train_init)
-            print('init % class {}: {}'.format(i, init_train_dist_class))
+            print(f'init % class {i}: {init_train_dist_class}')
 
         if X_train_original_after_sampling_inds == []:
             assert len(X_train_init_inds) + len(X_train_remaining_inds) == len(
-                X_train_original_inds), 'init {}, remaining {}, original {}'.format(len(X_train_init_inds),
-                                                                                    len(X_train_remaining_inds),
-                                                                                    len(X_train_original_inds))
+                X_train_original_inds), f'init {len(X_train_init_inds)}, remaining {len(X_train_remaining_inds)}, original {len(X_train_original_inds)}'
         else:
             assert len(X_train_init_inds) + len(X_train_remaining_inds) == len(X_train_original_after_sampling_inds)
 
@@ -314,11 +316,15 @@ def al_loop(args):
         # Annotations & budget
         ####################################################################
         current_annotations = len(X_train_init)  # without validation data
-        if X_train_original_after_sampling == []:
-            total_annotations = round(args.budget * len(np.array(X_train_original)[X_train_original_inds]) / 100)
-        else:
-            total_annotations = round(args.budget * len(X_train_original_after_sampling) / 100)
-        if args.budget > 100: total_annotations = args.budget
+
+        total_annotations, is_percentage = args.budget
+        if is_percentage:
+            if X_train_original_after_sampling == []:
+                total_annotations = round(
+                    total_annotations * len(np.array(X_train_original)[X_train_original_inds]) / 100)
+            else:
+                total_annotations = round(total_annotations * len(X_train_original_after_sampling) / 100)
+
         annotations_per_iteration = args.acquisition_size
         total_iterations = math.ceil(total_annotations / annotations_per_iteration)
 
@@ -354,7 +360,7 @@ def al_loop(args):
         ##############################################################
         # Train model on training dataset (Dtrain)
         ##############################################################
-        print("\n Start Training model of iteration {}!\n".format(current_iteration))
+        print(f"\n Start Training model of iteration {current_iteration}!\n")
         train_results = train_transformer_model(args, X_train_current_inds,
                                                 X_val_inds,
                                                 iteration=current_iteration,
@@ -490,14 +496,14 @@ def al_loop(args):
         # X_train_current_inds and X_train_remaining_inds are lists of indices of the original dataset
         # sampled_inds is a list of indices OF THE X_train_remaining_inds(!!!!) LIST THAT SHOULD BE REMOVED
         # INCEPTION %&#!@***CAUTION***%&#!@
-        if args.acquisition in ['alps', 'badge', 'adv', 'FTbertKM', 'adv_train',"cal", "contrastive"]:
+        if args.acquisition in ['alps', 'badge', 'adv', 'FTbertKM', 'adv_train', "cal", "contrastive"]:
             X_train_current_inds += list(sampled_ind)
         else:
             X_train_current_inds += list(np.array(X_train_remaining_inds)[sampled_ind])
 
         assert len(ids_per_it[str(0)]) == args.init_train_data
 
-        if args.acquisition in ['alps', 'badge', 'adv', 'FTbertKM', 'adv_train',"cal", "contrastive"]:
+        if args.acquisition in ['alps', 'badge', 'adv', 'FTbertKM', 'adv_train', "cal", "contrastive"]:
             selected_dataset_ids = sampled_ind
             selected_dataset_ids = list(map(int, selected_dataset_ids))  # for json
             assert len(ids_per_it[str(0)]) == args.init_train_data
@@ -511,7 +517,7 @@ def al_loop(args):
         assert len(ids_per_it[str(0)]) == args.init_train_data
         assert len(ids_per_it[str(current_iteration)]) == annotations_per_iteration
 
-        if args.acquisition in ['alps', 'badge', 'adv', 'FTbertKM', 'adv_train',"cal", "contrastive"]:
+        if args.acquisition in ['alps', 'badge', 'adv', 'FTbertKM', 'adv_train', "cal", "contrastive"]:
             X_train_remaining_inds = [x for x in X_train_original_inds if x not in X_train_current_inds
                                       and x not in X_discarded_inds]
         else:
@@ -537,13 +543,13 @@ def al_loop(args):
 
         print("\n")
         print("*" * 12)
-        print("End of iteration {}:".format(current_iteration))
+        print(f"End of iteration {current_iteration}:")
         if 'loss' in test_results.keys():
-            print("Train loss {}, Val loss {}, Test loss {}".format(train_results['train_loss'], train_results['loss'],
-                                                                    test_results['loss']))
-        print("Annotated {} samples".format(annotations_per_iteration))
-        print("Current labeled (training) data: {} samples".format(len(X_train_current_inds)))
-        print("Remaining budget: {} (in samples)".format(total_annotations - current_annotations))
+            print(
+                f"Train loss {train_results['train_loss']}, Val loss {train_results['loss']}, Test loss {test_results['loss']}")
+        print(f"Annotated {annotations_per_iteration} samples")
+        print(f"Current labeled (training) data: {len(X_train_current_inds)} samples")
+        print(f"Remaining budget: {total_annotations - current_annotations} (in samples)")
         print("*" * 12)
         print()
 
@@ -565,6 +571,26 @@ def al_loop(args):
     print('The end!....')
 
     return
+
+
+class Percentable(object):
+    """
+    Represents a number that can either be a normal float or a percentage
+    Takes X or X% and returns a tuple with (X, bool is_percentage)"""
+
+    def __new__(self, percentable_string):
+        is_percentage = False
+
+        if percentable_string.endswith('%'):
+            is_percentage = True
+            percentable_string = percentable_string[:-1]
+
+        try:
+            percentable_string = float(percentable_string)
+        except ValueError:
+            print(f"{percentable_string} is not a valid float.")
+
+        return percentable_string, is_percentage
 
 
 if __name__ == '__main__':
@@ -670,8 +696,10 @@ if __name__ == '__main__':
                         choices=acquisition_functions,
                         help="Choose an acquisition function to be used for AL.")
     parser.add_argument("-budget", "--budget", required=False,
-                        default=50, type=int,
-                        help="budget \in [1,100] percent. if > 100 then it represents the total annotations")
+                        default="15%", type=Percentable,
+                        help="budget as 'X%%' percent of training data, or 'X' without %% for total annotations; 15%% by default")
+    parser.add_argument("-cap_training_pool", "--cap_training_pool", required=False, default=None, type=int,
+                        help="limits the number of samples in the training pool to the first X entries")
     parser.add_argument("-mc_samples", "--mc_samples", required=False, default=None, type=int,
                         help="number of MC forward passes in calculating uncertainty estimates")
     parser.add_argument("--resume", required=False,
@@ -679,13 +707,13 @@ if __name__ == '__main__':
                         type=bool,
                         help="if True resume experiment")
     parser.add_argument("--acquisition_size", required=False,
-                        default=None,
-                        type=int,
-                        help="acquisition size at each AL iteration; if None we sample 1%%")
+                        default="2%",
+                        type=Percentable,
+                        help="acquisition size at each AL iteration (as absolute 'X' or percentage of train 'X%%'); if None we sample 2%%")
     parser.add_argument("--init_train_data", required=False,
-                        default=None,
-                        type=int,
-                        help="initial training data for AL; if None we sample 1%%")
+                        default="1%",
+                        type=Percentable,
+                        help="initial training data for AL (as absolute 'X' or percentage of train 'X%%'); if None we sample 1%%")
     parser.add_argument("--indicator", required=False,
                         default=None,
                         type=str,
@@ -732,7 +760,7 @@ if __name__ == '__main__':
         torch.distributed.init_process_group(backend="nccl")
         args.n_gpu = 1
 
-    print('device: {}'.format(args.device))
+    print(f'device: {args.device}')
 
     # Setup args
     if args.seed == None:
@@ -748,25 +776,25 @@ if __name__ == '__main__':
 
     # Output dir
     ckpt_dir = os.path.join(CKPT_DIR,
-                            '{}_{}_{}_{}'.format(args.dataset_name, args.model_type, args.acquisition, args.seed))
-    args.output_dir = os.path.join(ckpt_dir, '{}_{}'.format(args.dataset_name, args.model_type))
+                            f'{args.dataset_name}_{args.model_type}_{args.acquisition}_{args.seed}')
+    args.output_dir = os.path.join(ckpt_dir, f'{args.dataset_name}_{args.model_type}')
     if args.model_type == 'allenai/scibert': args.output_dir = os.path.join(ckpt_dir,
-                                                                            '{}_{}'.format(args.dataset_name, 'bert'))
+                                                                            f'{args.dataset_name}_{"bert"}')  # TODO verify that 'bert' is correct here
 
-    if args.indicator is not None: args.output_dir += '-{}'.format(args.indicator)
+    if args.indicator is not None: args.output_dir += f'-{args.indicator}'
     # The following arguments are experiments in the ablation/analysis section of the paper
     if args.reverse: args.output_dir += '-reverse'
     if args.mean_embs: args.output_dir += '-inputs'
     if args.mean_out: args.output_dir += '-outputs'
     if args.cls: args.output_dir += '-cls'
     if args.ce: args.output_dir += '-ce'
-    if args.operator != "mean" and args.acquisition == "adv_train": args.output_dir += '-{}'.format(args.operator)
+    if args.operator != "mean" and args.acquisition == "adv_train": args.output_dir += f'-{args.operator}'
     if args.knn_lab: args.output_dir += '-lab'
     if args.bert_score: args.output_dir += '-bs'
     if args.bert_rep: args.output_dir += '-br'
     if args.tfidf: args.output_dir += '-tfidf'
 
-    print('output_dir={}'.format(args.output_dir))
+    print(f'output_dir={args.output_dir}')
     create_dir(args.output_dir)
 
     if (
@@ -776,9 +804,7 @@ if __name__ == '__main__':
             and not args.overwrite_output_dir
     ):
         raise ValueError(
-            "Output directory ({}) already exists and is not empty. Use --overwrite_output_dir to overcome.".format(
-                args.output_dir
-            )
+            f"Output directory ({args.output_dir}) already exists and is not empty. Use --overwrite_output_dir to overcome."
         )
 
     # Setup logging
